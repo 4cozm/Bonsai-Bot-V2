@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ "dev" ]
+    branches: ["dev"]
   pull_request:
-    branches: [ "dev" ]
+    branches: ["dev"]
 
 jobs:
   test-and-coverage:
@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
 
       - run: npm ci
@@ -25,3 +25,22 @@ jobs:
         with:
           files: ./coverage/lcov.info
           fail_ci_if_error: true
+
+      - name: Notify Discord (CI 완료)
+        if: ${{ always() && success() }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -X POST -H "Content-Type: application/json" \
+               -d "{\"content\":\"✅ CI 통과: ${RUN_URL}\"}" \
+               "$DISCORD_WEBHOOK_URL"
+
+      - name: Notify Discord (CI 실패)
+        if: ${{ always() && failure() }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H "Content-Type: application/json" \
+               -d "{\"content\":\"❌ CI 실패\",\"embeds\":[{\"image\":{\"url\":\"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQnim2syXRUAOjKSHPaQ9RCabQQexcOU8qyJA&s\"}}]}" \
+               "$DISCORD_WEBHOOK_URL"
