@@ -42,5 +42,5 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           curl -X POST -H "Content-Type: application/json" \
-               -d "{\"content\":\"❌ CI 실패\",\"embeds\":[{\"image\":{\"url\":\"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQnim2syXRUAOjKSHPaQ9RCabQQexcOU8qyJA&s\"}}]}" \
-               "$DISCORD_WEBHOOK_URL"
+            -d "{\"content\":\"❌ CI 실패\",\"username\":\"Bonsai-Bot\",\"avatar_url\":\"https://i.pinimg.com/236x/25/9e/6c/259e6c9a65242a5e994c7ef6f0b898b5.jpg\"}" \
+            "$DISCORD_WEBHOOK_URL"
