@@ -1,0 +1,26 @@
+{
+  "name": "bonsai-bot-v2",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "start infra/pm2/ecosystem.config.cjs --env production && pm2 logs",
+    "start": "pm2 start infra/pm2/ecosystem.config.cjs",
+    "stop": "pm2 stop all",
+    "restart": "pm2 restart all",
+    "logs": "pm2 logs",
+    "test": "jest",
+    "test:cov": "jest --coverage"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "jest": "^30.0.0",
+    "pm2": "^6.0.14"
+  }
+}
