@@ -10,8 +10,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "start infra/pm2/ecosystem.config.cjs --env production && pm2 logs",
-    "start": "pm2 start infra/pm2/ecosystem.config.cjs",
+    "dev": "set isDev=true&& node .\\infra\\scripts\\dev-pm2.js",
+    "start": "pm2 start .\\infra\\pm2\\ecosystem.config.cjs --env production && pm2 logs",
     "stop": "pm2 stop all",
     "restart": "pm2 restart all",
     "logs": "pm2 logs",
