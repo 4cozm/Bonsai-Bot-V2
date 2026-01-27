@@ -1,34 +1,28 @@
 module.exports = {
   apps: [
     {
-      name: "cat",
+      name: "master",
       script: "apps/bot/src/app.js",
+      watch: false,
 
-      env: {
-        TENANT: "cat",
-        isDev: "true",
-      },
+      autorestart: false,
+      max_restarts: 0,
 
-      env_production: {
-        TENANT: "cat",
-        isDev: "false",
-      },
-
+      env: { isDev: "true", RUN_MODE: "master" },
+      env_production: { isDev: "false", RUN_MODE: "master" },
+    },
+    {
+      name: "cat",
+      script: "apps/tenants/src/app.js",
+      env: { isDev: "true", RUN_MODE: "tenant-worker", TENANT: "cat" },
+      env_production: { isDev: "false", RUN_MODE: "tenant-worker", TENANT: "cat" },
       watch: false,
     },
     {
       name: "fish",
-      script: "apps/bot/src/app.js",
-
-      env: {
-        TENANT: "fish",
-        isDev: "true",
-      },
-      env_production: {
-        TENANT: "fish",
-        isDev: "false",
-      },
-
+      script: "apps/tenants/src/app.js",
+      env: { isDev: "true", RUN_MODE: "tenant-worker", TENANT: "fish" },
+      env_production: { isDev: "false", RUN_MODE: "tenant-worker", TENANT: "fish" },
       watch: false,
     },
   ],
