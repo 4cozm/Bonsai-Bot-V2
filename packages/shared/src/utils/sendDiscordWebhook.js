@@ -1,4 +1,3 @@
-// packages/core/src/utils/sendDiscordWebhook.js
 
 /**
  * Discord Webhook content는 2000자 제한이 있어서 안전하게 잘라낸다.

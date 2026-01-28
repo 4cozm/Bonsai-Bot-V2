@@ -4,11 +4,8 @@
     "private": true,
     "type": "module",
     "workspaces": [
-        "apps/*",
         "packages/*"
     ],
-    "description": "",
-    "main": "index.js",
     "scripts": {
         "dev": "node .\\infra\\scripts\\dev-pm2.js",
         "start": "pm2 start .\\infra\\pm2\\ecosystem.config.cjs --env production && pm2 logs",
@@ -31,9 +28,5 @@
         "jsdoc": "^4.0.5",
         "pm2": "^6.0.14",
         "prettier": "^3.8.1"
-    },
-    "dependencies": {
-        "winston": "^3.19.0",
-        "winston-transport": "^4.9.0"
     }
 }

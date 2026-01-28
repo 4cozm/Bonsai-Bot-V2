@@ -1,0 +1,14 @@
+{
+    "name": "@bonsai/shared",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.js",
+        "./*": "./src/*.js"
+    },
+    "dependencies": {
+        "winston": "^3.19.0",
+        "winston-transport": "^4.9.0"
+    }
+}

@@ -1,9 +1,9 @@
-import "dotenv/config";
-import { importVaultSecrets } from "../../../packages/adapters/src/keyvault/importVaultSecrets.js";
-import { logger } from "../../../packages/core/src/utils/logger.js";
+// apps/tenants/src/app.js
+import { logger } from "@bonsai/shared";
+import { initializeWorker } from "../../../packages/worker/src/initialize/index.js";
 
 function mustGet(name) {
-    const v = (process.env[name] || "").trim();
+    const v = String(process.env[name] || "").trim();
     if (!v) throw new Error(`환경변수 누락: ${name}`);
     return v;
 }
@@ -11,19 +11,13 @@ function mustGet(name) {
 async function main() {
     const log = logger();
 
-    try {
-        const tenant = mustGet("TENANT");
-        log.info(`[worker:${tenant}] 부팅 시작`);
+    const tenant = mustGet("TENANT");
+    log.info(`[worker:${tenant}] 부팅 시작`);
 
-        await importVaultSecrets();
+    await initializeWorker({ log });
 
-        log.info(`[worker:${tenant}] 스텁 실행 중`);
-
-        setInterval(() => {}, 60_000);
-    } catch (err) {
-        log.warn("[worker] 부팅 실패", err);
-        process.exit(1);
-    }
+    log.info(`[worker:${tenant}] 스텁 실행 중`);
+    // TODO: 여기서 실제 큐 consume / 워커 루프를 시작해야 함.
 }
 
 process.on("SIGINT", () => {
@@ -35,4 +29,7 @@ process.on("SIGTERM", () => {
     process.exit(0);
 });
 
-main();
+main().catch((err) => {
+    logger().warn("[worker] 부팅 실패", err);
+    process.exit(1);
+});

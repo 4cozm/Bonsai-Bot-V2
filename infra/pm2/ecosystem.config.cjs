@@ -2,7 +2,7 @@ module.exports = {
     apps: [
         {
             name: "master",
-            script: "apps/bot/src/app.js",
+            script: "apps/master/src/app.js",
             watch: false,
 
             autorestart: false,
