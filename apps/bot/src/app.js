@@ -1,59 +1,70 @@
 import "dotenv/config";
 import { createDiscordClient } from "../../../packages/adapters/src/discord/createDiscordClient.js";
 import { importVaultSecrets } from "../../../packages/adapters/src/keyvault/importVaultSecrets.js";
+import { logger } from "../../../packages/core/src/utils/logger.js";
+
+function isDevMode() {
+    return (process.env.isDev || "").toLowerCase() === "true";
+}
 
 async function main() {
-  console.log("[master] 부팅 시작");
+    const log = logger();
 
-  await importVaultSecrets();
+    log.info("[master] 부팅 시작");
 
-  const client = createDiscordClient();
+    await importVaultSecrets();
 
-  client.once("ready", async () => {
-    const tag = client.user?.tag ?? "(unknown)";
-    const gid = (process.env.DISCORD_GUILD_ID || "").trim();
-
-    console.log(`[master] 로그인 완료: ${tag}`);
-
-    if (gid) {
-      const g = client.guilds.cache.get(gid);
-      if (g) console.log(`[master] 대상 길드 캐시 확인: ${g.name} (${g.id})`);
-      else console.log(`[master] 대상 길드가 캐시에 없음: ${gid}`);
-    } else {
-      console.log("[master] DISCORD_GUILD_ID 미설정 (로그만 생략)");
+    if (isDevMode()) {
+        log.info("[master] 개발환경에서는 master 프로세스가 동작하지 않습니다");
+        process.exit(0);
     }
-  });
 
-  client.on("error", (err) => {
-    console.error("[master] Discord client error:", err?.message ?? err);
-  });
+    const client = createDiscordClient();
 
-  client.on("shardError", (err) => {
-    console.error("[master] Discord shard error:", err?.message ?? err);
-  });
+    client.once("ready", async () => {
+        const tag = client.user?.tag ?? "(unknown)";
+        const gid = (process.env.DISCORD_GUILD_ID || "").trim();
 
-  const shutdown = async (signal) => {
-    try {
-      console.log(`[master] 종료 요청(${signal}) - 디스코드 연결 정리`);
-      await client.destroy();
-    } catch (e) {
-      console.log(`[master] 종료 정리 중 오류: ${e?.message ?? e}`);
-    } finally {
-      process.exit(0);
-    }
-  };
+        log.info(`[master] 로그인 완료: ${tag}`);
 
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
+        if (gid) {
+            const g = client.guilds.cache.get(gid);
+            if (g) log.info(`[master] 대상 길드 캐시 확인: ${g.name} (${g.id})`);
+            else log.error(`[master] 대상 길드가 캐시에 없음: ${gid}`);
+        } else {
+            log.info("[master] DISCORD_GUILD_ID 미설정 (로그만 생략)");
+        }
+    });
 
-  console.log("[master] Discord 로그인 시도");
-  await client.login(process.env.DISCORD_TOKEN);
+    client.on("error", (err) => {
+        log.warn("[master] Discord client error", err);
+    });
 
-  // 프로세스 유지 (ready 이후에도 살아있음)
-  setInterval(() => {}, 60_000);
+    client.on("shardError", (err) => {
+        log.warn("[master] Discord shard error", err);
+    });
+
+    const shutdown = async (signal) => {
+        try {
+            log.info(`[master] 종료 요청(${signal}) - 디스코드 연결 정리`);
+            await client.destroy();
+        } catch (e) {
+            log.warn("[master] 종료 정리 중 오류", e);
+        } finally {
+            process.exit(0);
+        }
+    };
+
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+    log.info("[master] Discord 로그인 시도");
+    await client.login(process.env.DISCORD_TOKEN);
+
+    setInterval(() => {}, 60_000);
 }
 
 main().catch((err) => {
-  console.error("[master] 부팅 실패:", err?.message ?? err);
-  process.exit(1);
+    logger().warn("[master] 부팅 실패", err);
+    process.exit(1);
 });

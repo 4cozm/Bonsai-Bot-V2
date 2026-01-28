@@ -1,47 +1,58 @@
 name: CI
 
 on:
-  push:
-    branches: ["dev"]
-  pull_request:
-    branches: ["dev"]
+    push:
+        branches: ["dev"]
+    pull_request:
+        branches: ["dev"]
 
 jobs:
-  test-and-coverage:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    test-and-coverage:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: "npm"
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+                  cache: "npm"
 
-      - run: npm ci
-      - run: npm run test:cov
+            - run: npm ci
+            - run: npm run test:cov
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/lcov.info
-          fail_ci_if_error: true
+            - name: Upload coverage to Codecov
+              uses: codecov/codecov-action@v5
+              with:
+                  token: ${{ secrets.CODECOV_TOKEN }}
+                  files: ./coverage/lcov.info
+                  fail_ci_if_error: true
+                  verbose: true
 
-      - name: Notify Discord (CI 완료)
-        if: ${{ always() && success() }}
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          curl -X POST -H "Content-Type: application/json" \
-               -d "{\"content\":\"✅ CI 통과: ${RUN_URL}\"}" \
-               "$DISCORD_WEBHOOK_URL"
+            - name: Build Codecov PR URL
+              if: ${{ success() && github.event_name == 'pull_request' }}
+              id: codecov_url
+              run: |
+                  echo "url=https://app.codecov.io/gh/${{ github.repository }}/pull/${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
 
-      - name: Notify Discord (CI 실패)
-        if: ${{ always() && failure() }}
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          curl -X POST -H "Content-Type: application/json" \
-            -d "{\"content\":\"❌ CI 실패\",\"username\":\"Bonsai-Bot\",\"avatar_url\":\"https://i.pinimg.com/236x/25/9e/6c/259e6c9a65242a5e994c7ef6f0b898b5.jpg\"}" \
-            "$DISCORD_WEBHOOK_URL"
+            - name: Notify Discord (PR만)
+              if: ${{ always() && github.event_name == 'pull_request' }}
+              env:
+                  DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                  CODECOV_URL: ${{ steps.codecov_url.outputs.url }}
+              run: |
+                  if [ "${{ job.status }}" = "success" ]; then
+                    curl -X POST -H "Content-Type: application/json" \
+                      -d "{\"content\":\"✅ CI 통과(PR)\\n- Run: ${RUN_URL}\\n- Codecov: ${CODECOV_URL}\"}" \
+                      "$DISCORD_WEBHOOK_URL"
+                  else
+                    curl -X POST -H "Content-Type: application/json" \
+                      -d "{\"content\":\"❌ CI 실패(PR)\\n- Run: ${RUN_URL}\",\"username\":\"Bonsai-Bot\",\"avatar_url\":\"https://i.pinimg.com/236x/25/9e/6c/259e6c9a65242a5e994c7ef6f0b898b5.jpg\"}" \
+                      "$DISCORD_WEBHOOK_URL"
+                  fi
+
+            - name: Prettier check
+              run: npm run format:check
+
+            - name: ESLint
+              run: npm run lint

@@ -1,26 +1,38 @@
 {
-  "name": "bonsai-bot-v2",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "dev": "set isDev=true&& node .\\infra\\scripts\\dev-pm2.js",
-    "start": "pm2 start .\\infra\\pm2\\ecosystem.config.cjs --env production && pm2 logs",
-    "stop": "pm2 stop all",
-    "restart": "pm2 restart all",
-    "logs": "pm2 logs",
-    "test": "jest --passWithNoTests",
-    "test:cov": "jest --coverage --passWithNoTests"
-  },
-  "devDependencies": {
-    "cross-env": "^7.0.3",
-    "jest": "^30.0.0",
-    "pm2": "^6.0.14"
-  }
+    "name": "bonsai-bot-v2",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "dev": "set isDev=true&& node .\\infra\\scripts\\dev-pm2.js",
+        "start": "pm2 start .\\infra\\pm2\\ecosystem.config.cjs --env production && pm2 logs",
+        "stop": "pm2 stop all",
+        "restart": "pm2 restart all",
+        "logs": "pm2 logs",
+        "test": "jest --passWithNoTests",
+        "test:cov": "jest --coverage --passWithNoTests",
+        "lint": "eslint .",
+        "format:check": "prettier . --check"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.39.2",
+        "cross-env": "^7.0.3",
+        "eslint": "^9.39.2",
+        "eslint-config-prettier": "^10.1.8",
+        "globals": "^17.2.0",
+        "jest": "^30.0.0",
+        "jsdoc": "^4.0.5",
+        "pm2": "^6.0.14",
+        "prettier": "^3.8.1"
+    },
+    "dependencies": {
+        "winston": "^3.19.0",
+        "winston-transport": "^4.9.0"
+    }
 }
