@@ -9,13 +9,14 @@ function isDevMode() {
 
 async function main() {
     const log = logger();
-
-    log.info("[master] 부팅 시작");
-
+    log.info(`[master] cwd=${process.cwd()} isDev=${process.env.isDev ?? "(undefined)"}`);
     await importVaultSecrets();
+    log.info(
+        `[master] after vault cwd=${process.cwd()} isDev=${process.env.isDev ?? "(undefined)"}`
+    );
 
     if (isDevMode()) {
-        log.info("[master] 개발환경에서는 master 프로세스가 동작하지 않습니다");
+        log.info("[master] 개발환경에서는 master 프로세스가 자동 비활성화 됩니다");
         process.exit(0);
     }
 

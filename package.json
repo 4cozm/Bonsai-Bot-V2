@@ -10,7 +10,7 @@
     "description": "",
     "main": "index.js",
     "scripts": {
-        "dev": "set isDev=true&& node .\\infra\\scripts\\dev-pm2.js",
+        "dev": "node .\\infra\\scripts\\dev-pm2.js",
         "start": "pm2 start .\\infra\\pm2\\ecosystem.config.cjs --env production && pm2 logs",
         "stop": "pm2 stop all",
         "restart": "pm2 restart all",
@@ -23,6 +23,7 @@
     "devDependencies": {
         "@eslint/js": "^9.39.2",
         "cross-env": "^7.0.3",
+        "dotenv": "^17.2.3",
         "eslint": "^9.39.2",
         "eslint-config-prettier": "^10.1.8",
         "globals": "^17.2.0",

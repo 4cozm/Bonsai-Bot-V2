@@ -9,7 +9,7 @@ const LOG_DIR = "logs";
 function isDevMode() {
     return (process.env.isDev || "").toLowerCase() === "true";
 }
-gay;
+
 const levels = {
     warn: 0,
     error: 1,
