@@ -1,1 +1,1 @@
-export { initialize } from "./initialize/index.js";
+export { initializeMaster } from "./initialize/index.js";

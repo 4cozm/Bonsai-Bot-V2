@@ -1,37 +1,47 @@
 // packages/worker/src/initialize/index.js
 import { loadVaultSecrets } from "@bonsai/external";
-import { logger } from "@bonsai/shared";
+import { keySetsFor, logger } from "@bonsai/shared";
 import dotenv from "dotenv";
 
 const VAULT_URL_DEV = "https://bonsai-bot-dev.vault.azure.net/";
 const VAULT_URL_PROD = "https://bonsai-bot.vault.azure.net/";
 
-const REQUIRED_WORKER = [
-    "TENANT",
-    // ... worker 전용 필수키
-];
-
 let dotenvLoaded = false;
 function loadDotenvOnce() {
     if (dotenvLoaded) return;
+    
+    if (process.env.isDev != null && String(process.env.isDev).trim() !== "") {
+        dotenvLoaded = true;
+        return;
+    }
+
     dotenvLoaded = true;
     dotenv.config();
 }
 
-/**
- * worker(tenant-worker) 초기화
- * - .env 로드
- * - KeyVault 시크릿 로드
- *
- * @param {{log?: {info:Function,warn:Function,error:Function}}} [opts]
- * @returns {Promise<void>}
- */
-export async function initializeWorker(opts = {}) {
-    const l = opts.log ?? logger();
+function isDevMode() {
+    return String(process.env.isDev || "").toLowerCase() === "true";
+}
+
+export async function initializeWorker({ log } = {}) {
+    const l = log ?? logger();
+
     loadDotenvOnce();
 
-    const isDev = String(process.env.isDev || "").toLowerCase() === "true";
+    const isDev = isDevMode();
     const vaultUrl = isDev ? VAULT_URL_DEV : VAULT_URL_PROD;
 
-    await loadVaultSecrets({ vaultUrl, requiredKeys: REQUIRED_WORKER, log: l });
+    const { sharedKeys, tenantKeys } = keySetsFor({ role: "worker", isDev });
+
+    await loadVaultSecrets({
+        vaultUrl,
+        sharedKeys,
+        tenantKeys,
+        tenant: process.env.TENANT, // tenantKeys가 있을 때만 필수
+        log: l,
+    });
+
+    l.info(
+        `[worker:init] vault ok isDev=${isDev} shared=${sharedKeys.length} tenant=${tenantKeys.length} tenantName=${process.env.TENANT ?? "(none)"}`
+    );
 }

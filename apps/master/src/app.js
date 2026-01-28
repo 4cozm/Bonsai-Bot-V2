@@ -1,7 +1,7 @@
 // apps/master/app.js
-import { logger } from "@bonsai/core";
 import { createDiscordClient } from "@bonsai/external";
-import { initialize } from "@bonsai/master";
+import { initializeMaster } from "@bonsai/master";
+import { logger } from "@bonsai/shared";
 
 function isDevMode() {
     return String(process.env.isDev || "").toLowerCase() === "true";
@@ -9,7 +9,6 @@ function isDevMode() {
 
 async function main() {
     const log = logger();
-    log.info(`[master] cwd=${process.cwd()} isDev=${process.env.isDev ?? "(undefined)"}`);
 
     // dev에서는 master 프로세스를 아예 올리지 않음 (불필요한 시크릿/디스코드 부팅 방지)
     if (isDevMode()) {
@@ -18,7 +17,7 @@ async function main() {
     }
 
     // 시크릿 로드(예: KeyVault)
-    await initialize();
+    await initializeMaster();
     log.info(
         `[master] after vault cwd=${process.cwd()} isDev=${process.env.isDev ?? "(undefined)"}`
     );

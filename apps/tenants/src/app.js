@@ -1,6 +1,6 @@
 // apps/tenants/src/app.js
 import { logger } from "@bonsai/shared";
-import { initializeWorker } from "../../../packages/worker/src/initialize/index.js";
+import { initializeWorker } from "@bonsai/worker";
 
 function mustGet(name) {
     const v = String(process.env[name] || "").trim();
