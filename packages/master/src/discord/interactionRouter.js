@@ -1,5 +1,7 @@
+// packages/master/src/discord/interactionRouter.js
 import { logger } from "@bonsai/shared";
 import { publishDevCommand } from "../usecases/publishDevCommand.js";
+import { publishProdCommand } from "../usecases/publishProdCommand.js";
 import { getRegistryByName } from "./commandRegistry.js";
 
 const log = logger();
@@ -17,9 +19,12 @@ export async function routeInteraction(interaction) {
 
     if (!item) {
         log.error(`[router] 알 수 없는 커맨드: ${interaction.commandName}`);
-        await interaction.reply?.({ content: "알 수 없는 명령", ephemeral: true });
+        await interaction.reply({ content: "알 수 없는 명령", ephemeral: true });
         return;
     }
+
+    // 3초 제한 회피: 먼저 ACK
+    await interaction.deferReply({ ephemeral: true });
 
     try {
         if (item.key === "dev") {
@@ -32,24 +37,35 @@ export async function routeInteraction(interaction) {
                 channelId: interaction.channelId ?? "",
                 cmd,
                 args,
+                interactionId: interaction.id,
+                interactionToken: interaction.token,
             });
 
-            await interaction.reply?.({
-                content: `dev 명령 발행 완료 (tenant=${res.tenantKey}, targetDev=${res.targetDev})`,
-                ephemeral: true,
-            });
+            await interaction.editReply(
+                `dev 명령 발행 완료 (tenant=${res.tenantKey}, targetDev=${res.targetDev})`
+            );
             return;
         }
 
         if (item.key === "ping") {
-            await interaction.reply?.({ content: "pong", ephemeral: true });
+            const res = await publishProdCommand({
+                discordUserId: interaction.user.id,
+                guildId: interaction.guildId ?? "",
+                channelId: interaction.channelId ?? "",
+                cmd: "ping",
+                args: "",
+                interactionId: interaction.id,
+                interactionToken: interaction.token,
+            });
+
+            await interaction.editReply(`prod 명령 발행 완료 (tenant=${res.tenantKey})`);
             return;
         }
 
-        // 앞으로 prod 명령은 여기서 RedisStreams로 publishProdCommand(...) 같은 식으로 확장
-        await interaction.reply?.({ content: "아직 라우팅 미구현", ephemeral: true });
+        await interaction.editReply("아직 라우팅 미구현");
     } catch (err) {
         log.error("[router] 처리 실패", err);
-        await interaction.reply?.({ content: "처리 실패", ephemeral: true });
+        // deferReply를 했으니 editReply로 마무리
+        await interaction.editReply("처리 실패");
     }
 }

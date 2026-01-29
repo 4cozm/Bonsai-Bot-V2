@@ -1,7 +1,12 @@
 // apps/master/app.js
-import { createDiscordClient } from "@bonsai/external";
-import { deployGuildCommands, initializeMaster, routeInteraction } from "@bonsai/master";
+import {
+    createDiscordClient,
+    deployGuildCommands,
+    initializeMaster,
+    routeInteraction,
+} from "@bonsai/master";
 import { logger } from "@bonsai/shared";
+import { GatewayIntentBits } from "discord.js";
 
 function isDevMode() {
     return String(process.env.isDev || "").toLowerCase() === "true";
@@ -28,9 +33,11 @@ async function main() {
         process.exit(1);
     }
 
-    const client = createDiscordClient();
+    const client = createDiscordClient({
+        intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+    });
 
-    client.once("ready", async () => {
+    client.once("clientReady", async () => {
         const tag = client.user?.tag ?? "(unknown)";
         const gid = String(process.env.DISCORD_GUILD_ID || "").trim();
 

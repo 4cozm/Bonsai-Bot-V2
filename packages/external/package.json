@@ -13,7 +13,6 @@
         "@azure/keyvault-secrets": "^4.10.0",
         "@prisma/client": "^7.3.0",
         "@smithy/node-http-handler": "^4.4.8",
-        "discord.js": "13.17.1",
         "redis": "^5.10.0"
     },
     "devDependencies": {
