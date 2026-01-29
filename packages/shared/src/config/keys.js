@@ -7,11 +7,16 @@ function envName(isDev) {
 export const ENV_REQUIRED = Object.freeze({
     master: Object.freeze({
         common: Object.freeze([
-            // master 공용
+            //AWS SNS 관련
+            "AWS_REGION",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SNS_TOPIC",
+            "REDIS_URL",
         ]),
         dev: Object.freeze([
             // dev master 전용
-            // 기본적으로 마스터는 개발환경에서 동작 안한다
+            "DEV_SQS_QUEUE_URL",
         ]),
         prod: Object.freeze([
             // prod master 전용
@@ -20,12 +25,8 @@ export const ENV_REQUIRED = Object.freeze({
             "DISCORD_APP_ID",
             "DISCORD_TOKEN",
             "DISCORD_TENANT_MAP",
-
+            "DISCORD_GUILD_ID",
             //AWS SNS 관련
-            "AWS_REGION",
-            "AWS_ACCESS_KEY_ID",
-            "AWS_SECRET_ACCESS_KEY",
-            "AWS_SNS_TOPIC",
             "DEV_DISCORD_MAP",
         ]),
     }),
@@ -36,12 +37,6 @@ export const ENV_REQUIRED = Object.freeze({
         ]),
         dev: Object.freeze([
             // dev worker 전용
-
-            //AWS SQS 소비를 위해 필요
-            "AWS_REGION",
-            "AWS_ACCESS_KEY_ID",
-            "AWS_SECRET_ACCESS_KEY",
-            "DEV_SQS_QUEUE_URL",
         ]),
         prod: Object.freeze([
             // prod worker 전용
@@ -51,7 +46,6 @@ export const ENV_REQUIRED = Object.freeze({
     global: Object.freeze({
         common: Object.freeze([
             // master/worker 공통
-            "DISCORD_GUILD_ID",
         ]),
         dev: Object.freeze([]),
         prod: Object.freeze(["DISCORD_WEBHOOK_URL"]),

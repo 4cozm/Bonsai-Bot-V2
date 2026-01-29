@@ -5,5 +5,8 @@
     "type": "module",
     "exports": {
         ".": "./src/index.js"
+    },
+    "dependencies": {
+        "@aws-sdk/client-sqs": "^3.978.0"
     }
 }

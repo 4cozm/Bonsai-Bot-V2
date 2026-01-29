@@ -51,17 +51,6 @@ export async function publishDevCommand(input) {
         cmd,
         args,
         meta: { discordUserId, guildId, channelId },
-        replyTo:
-            input.interactionId && input.interactionToken
-                ? {
-                      type: "discord-interaction",
-                      interaction: {
-                          id: String(input.interactionId),
-                          token: String(input.interactionToken),
-                      },
-                      channelId,
-                  }
-                : undefined,
     });
 
     envelope.targetDev = [targetDev];

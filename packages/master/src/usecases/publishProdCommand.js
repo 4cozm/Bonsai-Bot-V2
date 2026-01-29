@@ -44,17 +44,6 @@ export async function publishProdCommand(input) {
         cmd,
         args,
         meta: { discordUserId, guildId, channelId },
-        replyTo:
-            input.interactionId && input.interactionToken
-                ? {
-                      type: "discord-interaction",
-                      interaction: {
-                          id: String(input.interactionId),
-                          token: String(input.interactionToken),
-                      },
-                      channelId,
-                  }
-                : undefined,
     });
 
     log.info(`[prod] RedisStreams 발행(예정) tenant=${tenantKey} cmd=${cmd} args=${args}`);

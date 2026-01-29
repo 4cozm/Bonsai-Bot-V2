@@ -7,6 +7,7 @@ const VAULT_URL_DEV = "https://bonsai-bot-dev.vault.azure.net/";
 const VAULT_URL_PROD = "https://bonsai-bot.vault.azure.net/";
 
 let dotenvLoaded = false;
+
 function loadDotenvOnce() {
     if (dotenvLoaded) return;
 
@@ -43,7 +44,7 @@ export async function initializeMaster(opts = {}) {
         log,
     });
 
-    // 필요하면 디버그 로그(없어도 됨)
+
     log.info(
         `[master:init] vault ok (isDev=${isDev}) keys=${sharedKeys.length}${
             tenantKeys?.length ? `+tenant(${tenantKeys.length})` : ""

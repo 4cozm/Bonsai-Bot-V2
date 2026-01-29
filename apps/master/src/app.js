@@ -1,9 +1,12 @@
 // apps/master/app.js
+import { createRedisClient } from "@bonsai/external";
 import {
     createDiscordClient,
     deployGuildCommands,
     initializeMaster,
+    publishCmdToTenantStream,
     routeInteraction,
+    startDevBridge,
 } from "@bonsai/master";
 import { logger } from "@bonsai/shared";
 import { GatewayIntentBits } from "discord.js";
@@ -15,17 +18,45 @@ function isDevMode() {
 async function main() {
     const log = logger();
 
-    // dev에서는 master 프로세스를 아예 올리지 않음 (불필요한 시크릿/디스코드 부팅 방지)
-    if (isDevMode()) {
-        log.info("[master] 개발환경에서는 master 프로세스가 자동 비활성화 됩니다");
-        process.exit(0);
-    }
-
-    // 시크릿 로드
     await initializeMaster();
+
+    const isDev = isDevMode();
     log.info(
         `[master] after vault cwd=${process.cwd()} isDev=${process.env.isDev ?? "(undefined)"}`
     );
+
+    if (isDev) {
+        log.info("[master] dev 모드: Dev Bridge(SQS->Redis) 시작 (Discord 비활성)");
+
+        const redis = await createRedisClient();
+
+        const ac = new AbortController();
+        process.on("SIGINT", async () => {
+            ac.abort();
+            try {
+                await redis.quit();
+            } catch {
+                // Ignore errors during redis cleanup
+            }
+        });
+        process.on("SIGTERM", async () => {
+            ac.abort();
+            try {
+                await redis.quit();
+            } catch {
+                // Ignore errors during redis cleanup
+            }
+        });
+
+        await startDevBridge({
+            signal: ac.signal,
+            onCmd: async (envelope) => {
+                await publishCmdToTenantStream({ redis, envelope });
+            },
+        });
+
+        return;
+    }
 
     const token = String(process.env.DISCORD_TOKEN || "").trim();
     if (!token) {
@@ -51,21 +82,15 @@ async function main() {
         const g = client.guilds.cache.get(gid);
         if (g) log.info(`[master] 대상 길드 캐시 확인: ${g.name} (${g.id})`);
         else log.error(`[master] 대상 길드가 캐시에 없음: ${gid}`);
+
         await deployGuildCommands();
     });
 
     client.on("interactionCreate", (interaction) => routeInteraction(interaction));
-
-    client.on("error", (err) => {
-        log.warn("[master] Discord client error", err);
-    });
-
-    client.on("shardError", (err) => {
-        log.warn("[master] Discord shard error", err);
-    });
+    client.on("error", (err) => log.warn("[master] Discord client error", err));
+    client.on("shardError", (err) => log.warn("[master] Discord shard error", err));
 
     let shuttingDown = false;
-
     const shutdown = async (signal, err) => {
         if (shuttingDown) return;
         shuttingDown = true;
