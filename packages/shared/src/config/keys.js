@@ -19,8 +19,12 @@ export const ENV_REQUIRED = Object.freeze({
             //Discord 관련 작업을 위해서
             "DISCORD_APP_ID",
             "DISCORD_TOKEN",
+            "DISCORD_TENANT_MAP",
 
             //AWS SNS 관련
+            "AWS_REGION",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
             "AWS_SNS_TOPIC",
             "DEV_DISCORD_MAP",
         ]),

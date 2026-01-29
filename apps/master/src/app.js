@@ -1,6 +1,6 @@
 // apps/master/app.js
 import { createDiscordClient } from "@bonsai/external";
-import { initializeMaster } from "@bonsai/master";
+import { deployGuildCommands, initializeMaster, routeInteraction } from "@bonsai/master";
 import { logger } from "@bonsai/shared";
 
 function isDevMode() {
@@ -16,7 +16,7 @@ async function main() {
         process.exit(0);
     }
 
-    // 시크릿 로드(예: KeyVault)
+    // 시크릿 로드
     await initializeMaster();
     log.info(
         `[master] after vault cwd=${process.cwd()} isDev=${process.env.isDev ?? "(undefined)"}`
@@ -44,7 +44,10 @@ async function main() {
         const g = client.guilds.cache.get(gid);
         if (g) log.info(`[master] 대상 길드 캐시 확인: ${g.name} (${g.id})`);
         else log.error(`[master] 대상 길드가 캐시에 없음: ${gid}`);
+        await deployGuildCommands();
     });
+
+    client.on("interactionCreate", (interaction) => routeInteraction(interaction));
 
     client.on("error", (err) => {
         log.warn("[master] Discord client error", err);
