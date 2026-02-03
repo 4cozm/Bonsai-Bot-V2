@@ -81,7 +81,6 @@ export async function runRedisStreamsCommandConsumer({
                     let envelope = null;
                     try {
                         envelope = JSON.parse(payloadText);
-
                     } catch {
                         log.error(
                             `[worker:redis] payload JSON 파싱 실패 tenant=${t} entryId=${entryId} payload=${payloadText.slice(0, 300)}`
@@ -108,54 +107,86 @@ export async function runRedisStreamsCommandConsumer({
                     );
 
                     // --- commandMap 기반 디스패치 ---
-                    let ok = true;
-                    let data = null;
+
+                    // ... envelope 파싱/검증 끝난 뒤
+                    const receivedAtMs = Date.now();
+                    const issuedAtSec = Number(envelope?.meta?.issuedAt);
+                    const issuedAtMs = Number.isFinite(issuedAtSec) ? issuedAtSec * 1000 : null;
+
+                    const startNs = process.hrtime.bigint();
+
+                    let res;
+                    let execOk = false;
+                    let execData = null;
 
                     try {
                         const cmdName = String(envelope.cmd ?? "").trim();
+                        const def = commandMap.get(cmdName);
 
                         if (!cmdName) {
-                            ok = false;
-                            data = {
-                                error: "cmd가 비어있음",
-                                envelopeId: String(envelope.id ?? ""),
-                            };
+                            execOk = false;
+                            execData = { error: "cmd가 비어있음" };
+                        } else if (!def || typeof def.execute !== "function") {
+                            execOk = false;
+                            execData = { error: `unknown cmd: ${cmdName}` };
                         } else {
-                            const def = commandMap.get(cmdName);
+                            const baseCtx = {
+                                redis,
+                                tenantKey: t,
+                                log,
+                                commandMap,
+                            };
 
-                            if (!def) {
-                                ok = false;
-                                data = { error: `unknown cmd: ${cmdName}` };
-                            } else if (typeof def.execute !== "function") {
-                                ok = false;
-                                data = { error: `cmd handler missing: ${cmdName}` };
-                            } else {
-                                const res = await def.execute(
-                                    { redis, tenantKey: t, log, commandMap },
-                                    envelope
-                                );
-                                ok = Boolean(res?.ok);
-                                data = res?.data ?? null;
-                            }
+                            // ✅ metrics는 command가 "표시할지 말지" 선택하도록 ctx에만 준다
+                            baseCtx.metrics = {
+                                issuedAtMs,
+                                workerReceivedAtMs: receivedAtMs,
+                                // 아래 3개는 execute 이후에 채워 넣는다
+                                workerFinishedAtMs: null,
+                                discordToWorkerReceiveMs:
+                                    issuedAtMs == null
+                                        ? null
+                                        : Math.max(0, receivedAtMs - issuedAtMs),
+                                workerHandlerMs: null,
+                                workerTotalMs: null,
+                            };
+
+                            res = await def.execute(baseCtx, envelope);
+
+                            execOk = Boolean(res?.ok);
+                            execData = res?.data ?? null;
+
+                            // command가 metrics를 data에 붙이든 말든, consumer는 간섭 안 함
                         }
                     } catch (err) {
-                        ok = false;
-                        data = { error: err?.message ?? String(err) };
+                        execOk = false;
+                        execData = { error: err?.message ?? String(err) };
                     }
 
-                    if (!ok) {
+                    const endNs = process.hrtime.bigint();
+                    const handlerMs = Number(endNs - startNs) / 1_000_000;
+                    const finishedAtMs = Date.now();
+                    const totalMs = Math.max(0, finishedAtMs - receivedAtMs);
+
+                    if (!execOk) {
                         log.info(
-                            `[worker:redis] 처리 실패 tenant=${t} envelopeId=${String(envelope.id ?? "")} cmd=${String(
+                            `[worker:redis] 실패 tenant=${t} envelopeId=${String(envelope.id ?? "")} cmd=${String(
                                 envelope.cmd ?? ""
-                            )} reason=${safeStringify(data)}`
+                            )} reason=${safeStringify(execData)}`
                         );
                     }
+                    
+                    log.info(
+                        `[worker:redis] 처리 완료 tenant=${t} envelopeId=${String(envelope.id ?? "")} cmd=${String(
+                            envelope.cmd ?? ""
+                        )} ok=${execOk} handlerMs=${handlerMs.toFixed(2)} totalMs=${totalMs}`
+                    );
 
-                    // result publish
+                    // result publish는 res.data 그대로
                     const resultEnv = buildResultEnvelope({
                         inReplyTo: String(envelope.id),
-                        ok,
-                        data,
+                        ok: execOk,
+                        data: execData,
                         meta: {
                             tenantKey: t,
                             cmd: envelope.cmd,
@@ -164,13 +195,7 @@ export async function runRedisStreamsCommandConsumer({
                     });
 
                     await redis.xAdd(resultStreamKey, "*", { payload: JSON.stringify(resultEnv) });
-
-                    // 처리 완료 후 ACK
                     await redis.xAck(streamKey, group, entryId);
-
-                    log.info(
-                        `[worker:redis] 처리 완료 tenant=${t} entryId=${entryId} inReplyTo=${resultEnv.inReplyTo} ok=${ok}`
-                    );
                 }
             }
         } catch (err) {

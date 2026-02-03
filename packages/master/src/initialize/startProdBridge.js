@@ -162,12 +162,87 @@ async function handleResult({ resultEnv, pendingMap, source }) {
     const ok = Boolean(resultEnv?.ok);
     const data = resultEnv?.data ?? null;
 
-    const content = ok ? `${safeStringify(data)}` : `❌ 처리 실패\n${safeStringify(data)}`;
+    if (!ok) {
+        await interaction.editReply({ content: `❌ 처리 실패\n${safeStringify(data)}` });
+        return;
+    }
 
-    await interaction.editReply({ content });
+    const render = buildDiscordReplyPayload(data);
+    await interaction.editReply(render);
 
     log.info(`[prodBridge] Discord 응답 완료 source=${source} inReplyTo=${inReplyTo} ok=${ok}`);
     return true;
+}
+
+/**
+ * worker data를 Discord 응답 payload로 변환한다.
+ * - data.embed === true 이면 embeds로 변환
+ * - 아니면 기존처럼 content로 출력
+ *
+ * @param {any} data
+ * @returns {{content?:string, embeds?:Array<any>}}
+ */
+function buildDiscordReplyPayload(data) {
+    if (!data || typeof data !== "object") {
+        return { content: safeStringify(data) };
+    }
+
+    if (data.embed !== true) {
+        // default text
+        // message 같은 필드가 있으면 그걸 우선 사용
+        if (typeof data.message === "string" && data.message.trim()) {
+            return { content: data.message };
+        }
+        return { content: safeStringify(data) };
+    }
+
+    // embed 모드
+    const title = typeof data.title === "string" && data.title.trim() ? data.title : "result";
+
+    const metrics = data.metrics && typeof data.metrics === "object" ? data.metrics : null;
+
+    const fields = [];
+
+    // 보기 좋은 핵심만 위로
+    if (metrics) {
+        if (metrics.discordToWorkerReceiveMs != null) {
+            fields.push({
+                name: "discord → worker",
+                value: `${Number(metrics.discordToWorkerReceiveMs).toFixed(0)} ms`,
+                inline: true,
+            });
+        }
+        if (metrics.workerTotalMs != null) {
+            fields.push({
+                name: "worker total",
+                value: `${Number(metrics.workerTotalMs).toFixed(0)} ms`,
+                inline: true,
+            });
+        }
+        if (metrics.workerHandlerMs != null) {
+            fields.push({
+                name: "handler",
+                value: `${Number(metrics.workerHandlerMs).toFixed(4)} ms`,
+                inline: true,
+            });
+        }
+    }
+
+    // epoch 같은 “보기 싫은 원시값”은 footer로 내리거나 생략
+    let footerText = "";
+
+    if (metrics?.issuedAtMs != null && metrics?.workerFinishedAtMs != null) {
+        footerText = `issuedAtMs=${metrics.issuedAtMs} finishedAtMs=${metrics.workerFinishedAtMs}`;
+    }
+
+    const embed = {
+        title,
+        fields: fields.length > 0 ? fields : [{ name: "data", value: safeStringify(data) }],
+        footer: footerText ? { text: footerText } : undefined,
+        timestamp: new Date().toISOString(),
+    };
+
+    return { embeds: [embed] };
 }
 
 /**
