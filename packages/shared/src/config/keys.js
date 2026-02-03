@@ -28,6 +28,9 @@ export const ENV_REQUIRED = Object.freeze({
             "DISCORD_GUILD_ID",
             //AWS SNS 관련
             "DEV_DISCORD_MAP",
+
+            //AWS result SQS 풀링 관련
+            "PROD_SQS_RESULT_QUEUE_URL",
         ]),
     }),
 
