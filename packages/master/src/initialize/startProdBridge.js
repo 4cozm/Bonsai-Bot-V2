@@ -175,74 +175,112 @@ async function handleResult({ resultEnv, pendingMap, source }) {
 }
 
 /**
- * worker data를 Discord 응답 payload로 변환한다.
- * - data.embed === true 이면 embeds로 변환
- * - 아니면 기존처럼 content로 출력
+ * worker data를 Discord editReply payload로 변환한다.
+ * - data.embed === true 이면 data.title/description/fields/footer를 그대로 사용
+ * - 없으면 metrics 기반 기본 임베드 생성
+ * - embed가 아니면 content로 출력
  *
  * @param {any} data
- * @returns {{content?:string, embeds?:Array<any>}}
+ * @returns {{content?: string, embeds?: Array<any>}}
  */
 function buildDiscordReplyPayload(data) {
-    if (!data || typeof data !== "object") {
+    // 1) primitive or null -> text
+    if (data == null || typeof data !== "object") {
         return { content: safeStringify(data) };
     }
 
+    // 2) embed 모드가 아니면 text
     if (data.embed !== true) {
-        // default text
-        // message 같은 필드가 있으면 그걸 우선 사용
         if (typeof data.message === "string" && data.message.trim()) {
             return { content: data.message };
         }
         return { content: safeStringify(data) };
     }
 
-    // embed 모드
+    // 3) embed 모드: "있으면 그대로 쓰기" 우선
     const title = typeof data.title === "string" && data.title.trim() ? data.title : "result";
+    const description =
+        typeof data.description === "string" && data.description.trim()
+            ? data.description
+            : undefined;
 
-    const metrics = data.metrics && typeof data.metrics === "object" ? data.metrics : null;
+    // fields: [{name, value, inline}]
+    const fields = Array.isArray(data.fields)
+        ? data.fields
+              .filter((f) => f && typeof f === "object")
+              .map((f) => ({
+                  name: String(f.name ?? "").trim() || " ",
+                  value: String(f.value ?? "").trim() || " ",
+                  inline: Boolean(f.inline),
+              }))
+              .filter((f) => f.name !== " " || f.value !== " ")
+        : [];
 
-    const fields = [];
+    // footer
+    const footerText =
+        typeof data.footer === "string" && data.footer.trim()
+            ? data.footer
+            : typeof data.raw === "string" && data.raw.trim()
+              ? data.raw
+              : "";
 
-    // 보기 좋은 핵심만 위로
-    if (metrics) {
-        if (metrics.discordToWorkerReceiveMs != null) {
-            fields.push({
-                name: "discord → worker",
-                value: `${Number(metrics.discordToWorkerReceiveMs).toFixed(0)} ms`,
-                inline: true,
-            });
+    // 4) data.fields가 없으면 metrics로 기본 fields 만들기 (fallback)
+    if (fields.length === 0) {
+        const metrics = data.metrics && typeof data.metrics === "object" ? data.metrics : null;
+
+        const pushField = (name, value) => {
+            if (value == null) return;
+            const s = String(value).trim();
+            if (!s) return;
+            fields.push({ name, value: s, inline: true });
+        };
+
+        if (metrics) {
+            pushField("Discord → Worker", formatMs(metrics.discordToWorkerReceiveMs));
+            pushField("Worker 총 처리", formatMs(metrics.workerTotalMs));
+            pushField("Handler", formatMs(metrics.workerHandlerMs));
+        } else {
+            // metrics도 없으면 전체를 한 줄로라도 보여주기
+            fields.push({ name: "data", value: safeStringify(data), inline: false });
         }
-        if (metrics.workerTotalMs != null) {
-            fields.push({
-                name: "worker total",
-                value: `${Number(metrics.workerTotalMs).toFixed(0)} ms`,
-                inline: true,
-            });
-        }
-        if (metrics.workerHandlerMs != null) {
-            fields.push({
-                name: "handler",
-                value: `${Number(metrics.workerHandlerMs).toFixed(4)} ms`,
-                inline: true,
-            });
-        }
-    }
-
-    // epoch 같은 “보기 싫은 원시값”은 footer로 내리거나 생략
-    let footerText = "";
-
-    if (metrics?.issuedAtMs != null && metrics?.workerFinishedAtMs != null) {
-        footerText = `issuedAtMs=${metrics.issuedAtMs} finishedAtMs=${metrics.workerFinishedAtMs}`;
     }
 
     const embed = {
         title,
-        fields: fields.length > 0 ? fields : [{ name: "data", value: safeStringify(data) }],
+        description,
+        fields,
         footer: footerText ? { text: footerText } : undefined,
         timestamp: new Date().toISOString(),
     };
 
     return { embeds: [embed] };
+}
+
+/**
+ * @param {any} v
+ * @returns {string}
+ */
+function safeStringify(v) {
+    try {
+        if (v == null) return "(no data)";
+        const s = JSON.stringify(v);
+        return s.length > 1800 ? `${s.slice(0, 1800)}…` : s;
+    } catch {
+        return String(v);
+    }
+}
+
+/**
+ * @param {any} ms
+ * @returns {string}
+ */
+function formatMs(ms) {
+    if (ms == null) return "알 수 없음";
+    const n = Number(ms);
+    if (!Number.isFinite(n)) return "알 수 없음";
+
+    if (n > 0 && n < 1) return `${(n * 1000).toFixed(1)} µs`;
+    return `${n.toFixed(0)} ms`;
 }
 
 /**
@@ -271,18 +309,4 @@ function parseSqsBodyToResultEnvelope(body) {
     if (!inReplyTo) return { ok: false, reason: "missing inReplyTo" };
 
     return { ok: true, resultEnv: j };
-}
-
-/**
- * @param {any} v
- * @returns {string}
- */
-function safeStringify(v) {
-    try {
-        if (v == null) return "(no data)";
-        const s = JSON.stringify(v);
-        return s.length > 1800 ? `${s.slice(0, 1800)}…` : s;
-    } catch {
-        return String(v);
-    }
 }
