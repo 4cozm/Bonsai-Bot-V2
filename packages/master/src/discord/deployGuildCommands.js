@@ -64,7 +64,6 @@ function normalizeChoicesForHash(choices) {
         });
 }
 
-
 function stableSortObject(value) {
     if (Array.isArray(value)) return value.map(stableSortObject);
 
@@ -83,7 +82,6 @@ function sha256Of(obj) {
     const json = JSON.stringify(normalized);
     return crypto.createHash("sha256").update(json).digest("hex");
 }
-
 
 async function discordApi(method, path, body) {
     const token = process.env.DISCORD_TOKEN;

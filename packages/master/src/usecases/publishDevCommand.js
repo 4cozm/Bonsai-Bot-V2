@@ -35,7 +35,6 @@ export async function publishDevCommand(input) {
     const tenantKey = resolveTenantKey(channelId);
     if (!tenantKey) throw new Error("허용되지 않은 채널");
 
-
     const envelope = buildCmdEnvelope({
         tenantKey,
         cmd: "dev",

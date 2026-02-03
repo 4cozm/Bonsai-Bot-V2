@@ -44,7 +44,6 @@ export async function initializeMaster(opts = {}) {
         log,
     });
 
-
     log.info(
         `[master:init] vault ok (isDev=${isDev}) keys=${sharedKeys.length}${
             tenantKeys?.length ? `+tenant(${tenantKeys.length})` : ""

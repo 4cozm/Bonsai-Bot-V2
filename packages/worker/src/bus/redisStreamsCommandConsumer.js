@@ -175,7 +175,7 @@ export async function runRedisStreamsCommandConsumer({
                             )} reason=${safeStringify(execData)}`
                         );
                     }
-                    
+
                     log.info(
                         `[worker:redis] 처리 완료 tenant=${t} envelopeId=${String(envelope.id ?? "")} cmd=${String(
                             envelope.cmd ?? ""

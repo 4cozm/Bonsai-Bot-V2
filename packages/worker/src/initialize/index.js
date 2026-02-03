@@ -54,7 +54,7 @@ export async function initializeWorker(opts = {}) {
         `[worker:init] vault ok isDev=${isDev} tenant=${tenantKey} sharedKeys=${sharedKeys.length} tenantKeys=${tenantKeys.length}`
     );
 
-    const redis = await createRedisClient(); 
+    const redis = await createRedisClient();
 
     const ac = new AbortController();
     const shutdown = async (sig) => {
