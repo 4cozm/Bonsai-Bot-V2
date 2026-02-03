@@ -253,7 +253,7 @@ function buildDiscordReplyPayload(data) {
         timestamp: new Date().toISOString(),
     };
 
-    return { embeds: [embed] };
+    return { content: "", embeds: [embed] };
 }
 
 /**
