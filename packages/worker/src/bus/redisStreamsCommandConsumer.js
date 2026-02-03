@@ -81,6 +81,7 @@ export async function runRedisStreamsCommandConsumer({
                     let envelope = null;
                     try {
                         envelope = JSON.parse(payloadText);
+
                     } catch {
                         log.error(
                             `[worker:redis] payload JSON 파싱 실패 tenant=${t} entryId=${entryId} payload=${payloadText.slice(0, 300)}`
@@ -112,32 +113,42 @@ export async function runRedisStreamsCommandConsumer({
 
                     try {
                         const cmdName = String(envelope.cmd ?? "").trim();
-                        const def = commandMap.get(cmdName);
 
-                        if (!def) {
+                        if (!cmdName) {
                             ok = false;
-                            data = { error: `알 수 없는 커맨드: ${cmdName}` };
-                        } else if (typeof def.execute !== "function") {
-                            ok = false;
-                            data = { error: `커맨드 핸들러 없음: ${cmdName}` };
+                            data = {
+                                error: "cmd가 비어있음",
+                                envelopeId: String(envelope.id ?? ""),
+                            };
                         } else {
-                            // handler는 "도메인 결과"만 반환: { ok, data }
-                            const res = await def.execute(
-                                {
-                                    redis,
-                                    tenantKey: t,
-                                    log,
-                                    commandMap,
-                                },
-                                envelope
-                            );
+                            const def = commandMap.get(cmdName);
 
-                            ok = Boolean(res?.ok);
-                            data = res?.data ?? null;
+                            if (!def) {
+                                ok = false;
+                                data = { error: `unknown cmd: ${cmdName}` };
+                            } else if (typeof def.execute !== "function") {
+                                ok = false;
+                                data = { error: `cmd handler missing: ${cmdName}` };
+                            } else {
+                                const res = await def.execute(
+                                    { redis, tenantKey: t, log, commandMap },
+                                    envelope
+                                );
+                                ok = Boolean(res?.ok);
+                                data = res?.data ?? null;
+                            }
                         }
                     } catch (err) {
                         ok = false;
                         data = { error: err?.message ?? String(err) };
+                    }
+
+                    if (!ok) {
+                        log.info(
+                            `[worker:redis] 처리 실패 tenant=${t} envelopeId=${String(envelope.id ?? "")} cmd=${String(
+                                envelope.cmd ?? ""
+                            )} reason=${safeStringify(data)}`
+                        );
                     }
 
                     // result publish
@@ -182,4 +193,14 @@ export async function runRedisStreamsCommandConsumer({
     }
 
     log.info(`[worker:redis] consume 종료 tenant=${t}`);
+}
+
+function safeStringify(v) {
+    try {
+        if (v == null) return "(no data)";
+        const s = JSON.stringify(v);
+        return s.length > 1800 ? `${s.slice(0, 1800)}…` : s;
+    } catch {
+        return String(v);
+    }
 }

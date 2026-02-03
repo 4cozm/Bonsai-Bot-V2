@@ -89,7 +89,7 @@ export async function runSqsCommandConsumer({ queueUrl, region, devKey, onCmd, s
                 }
 
                 log.info(
-                    `[devSqs] cmd 수신 messageId=${messageId} tenantKey=${payload?.tenantKey} cmd=${payload?.cmd}`
+                    `[devSqs] cmd 수신 messageId=${messageId} tenantKey=${payload?.tenantKey}`
                 );
 
                 // ✅ 여기서 Redis Streams로 라우팅(브릿지)

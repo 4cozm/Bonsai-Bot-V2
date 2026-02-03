@@ -45,6 +45,10 @@ export function buildCmdEnvelope(input) {
         log.error("[envelope] meta 필수 값 누락", meta);
         throw new Error("envelope meta 필수 값 누락");
     }
+    if (!cmd) {
+        log.error("[envelope] cmd 누락", { cmd });
+        throw new Error("cmd 누락");
+    }
 
     const envelope = {
         id: randomUUID(), // correlationId
