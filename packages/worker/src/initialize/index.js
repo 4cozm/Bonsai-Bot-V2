@@ -1,7 +1,7 @@
-// packages/worker/src/initialize/index.js
-import { loadVaultSecrets } from "@bonsai/external";
+import { createRedisClient, loadVaultSecrets } from "@bonsai/external";
 import { keySetsFor, logger } from "@bonsai/shared";
 import dotenv from "dotenv";
+import { runRedisStreamsCommandConsumer } from "../bus/redisStreamsCommandConsumer.js";
 
 const VAULT_URL_DEV = "https://bonsai-bot-dev.vault.azure.net/";
 const VAULT_URL_PROD = "https://bonsai-bot.vault.azure.net/";
@@ -23,11 +23,14 @@ function isDevMode() {
     return String(process.env.isDev || "").toLowerCase() === "true";
 }
 
-export async function initializeWorker({ log } = {}) {
-    const l = log ?? logger();
+/**
+ * worker 초기화 + Redis Streams 소비 시작
+ * @param {{log?: {info:Function,warn:Function,error:Function}}} [opts]
+ */
+export async function initializeWorker(opts = {}) {
+    const log = opts.log ?? logger();
 
     loadDotenvOnce();
-
     const isDev = isDevMode();
     const vaultUrl = isDev ? VAULT_URL_DEV : VAULT_URL_PROD;
 
@@ -37,27 +40,42 @@ export async function initializeWorker({ log } = {}) {
         vaultUrl,
         sharedKeys,
         tenantKeys,
-        tenant: process.env.TENANT, // tenantKeys가 있을 때만 필수
-        log: l,
+        tenant: process.env.TENANT,
+        log,
     });
 
-    const tenant = String(process.env.TENANT ?? "").trim();
-    if (!tenant) {
-        l.error("[worker:init] TENANT가 비어있음");
+    const tenantKey = String(process.env.TENANT ?? "").trim();
+    if (!tenantKey) {
+        log.error("[worker:init] TENANT가 비어있음");
         throw new Error("TENANT가 비어있음");
     }
 
-    l.info(
-        `[worker:init] vault ok isDev=${isDev} shared=${sharedKeys.length} tenant=${tenantKeys.length} tenantName=${tenant}`
+    log.info(
+        `[worker:init] vault ok isDev=${isDev} tenant=${tenantKey} sharedKeys=${sharedKeys.length} tenantKeys=${tenantKeys.length}`
     );
 
-    // ✅ 이제 worker는 Redis Streams만 소비 (SQS/SNS/dev bridge 모름)
+    const redis = await createRedisClient(); 
+
     const ac = new AbortController();
-    process.on("SIGINT", () => ac.abort());
-    process.on("SIGTERM", () => ac.abort());
+    const shutdown = async (sig) => {
+        log.info(`[worker:init] 종료 요청(${sig})`);
+        ac.abort();
+        try {
+            await redis.quit();
+        } catch {
+            //무시
+        }
+        process.exit(0);
+    };
 
-    // TODO: 여기서 Redis Streams consumer 시작
-    // await startTenantRedisConsumer({ tenantKey: tenant, signal: ac.signal, log: l });
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-    l.info(`[worker:init] consumer 시작 tenant=${tenant} (Redis Streams only)`);
+    await runRedisStreamsCommandConsumer({
+        redis,
+        tenantKey,
+        signal: ac.signal,
+        group: "bonsai-worker",
+        consumer: `w-${tenantKey}-${process.pid}`,
+    });
 }

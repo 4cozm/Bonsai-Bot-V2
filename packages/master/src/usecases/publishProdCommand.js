@@ -1,14 +1,14 @@
-// packages/master/src/usecases/prod/publishProdCommand.js
+// packages/master/src/usecases/publishProdCommand.js
 import { buildCmdEnvelope, logger } from "@bonsai/shared";
+import { publishCmdToRedisStream } from "../bus/publishCmdToRedisStream.js";
 import { resolveTenantKey } from "../config/tenantChannelMap.js";
-// TODO: Redis Streams publisher 붙이면 여기서 가져오면 됨
-// import { publishStreamJson } from "@bonsai/external";
 
 const log = logger();
 
 /**
- * 프로덕트 테넌트(worker)로 명령을 발행한다. (Redis Streams 예정)
- * - DEV_DISCORD_MAP/targetDev 같은 dev 정책은 절대 포함하지 않는다.
+ * Prod 명령을 Redis Streams로 발행한다.
+ * - channelId -> tenantKey 라우팅
+ * - envelope.id를 반환해서 pending 매칭 키로 사용한다.
  *
  * @param {object} input
  * @param {string} input.discordUserId
@@ -16,11 +16,14 @@ const log = logger();
  * @param {string} input.channelId
  * @param {string} input.cmd
  * @param {string} [input.args]
- * @param {string} [input.interactionId]
- * @param {string} [input.interactionToken]
- * @returns {Promise<{tenantKey: string, envelopeId: string}>}
+ * @param {object} deps
+ * @param {import("redis").RedisClientType} deps.redis
+ * @returns {Promise<{tenantKey:string, envelopeId:string}>}
  */
-export async function publishProdCommand(input) {
+export async function publishProdCommand(input, deps) {
+    const redis = deps?.redis;
+    if (!redis) throw new Error("redis 주입이 필요합니다.");
+
     const discordUserId = String(input.discordUserId ?? "");
     const guildId = String(input.guildId ?? "");
     const channelId = String(input.channelId ?? "");
@@ -46,10 +49,8 @@ export async function publishProdCommand(input) {
         meta: { discordUserId, guildId, channelId },
     });
 
-    log.info(`[prod] RedisStreams 발행(예정) tenant=${tenantKey} cmd=${cmd} args=${args}`);
+    await publishCmdToRedisStream({ redis, envelope });
 
-    // TODO: Redis Streams publish 연결
-    // await publishStreamJson({ stream: "bonsai:cmd", envelope });
-    // 지금은 스텁: 실제 연결 전이라도 호출 흐름만 맞추려고 envelopeId 반환
+    log.info(`[prod] streams 발행 tenant=${tenantKey} cmd=${cmd} envelopeId=${envelope.id}`);
     return { tenantKey, envelopeId: envelope.id };
 }

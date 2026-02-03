@@ -57,6 +57,9 @@ export async function publishDevCommand(input) {
 
     log.info(`[dev] SNS 발행 tenant=${tenantKey} cmd=${cmd} args=${args} targetDev=${targetDev}`);
 
-    const { messageId } = await publishJson(envelope);
+    const { messageId } = await publishJson(envelope, {
+        targetDev,
+        type: "cmd",
+    });
     return { messageId, targetDev, tenantKey, envelopeId: envelope.id };
 }

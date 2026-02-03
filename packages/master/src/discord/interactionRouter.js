@@ -8,23 +8,29 @@ const log = logger();
 
 /**
  * Discord Interaction을 레지스트리 기반으로 라우팅한다.
+ *
  * @param {object} interaction - discord.js Interaction
+ * @param {object} [ctx]
+ * @param {Map<string, any>} [ctx.pendingMap] - envelopeId -> {interaction}
+ * @param {import("redis").RedisClientType} [ctx.redis] - prod cmd publish용
  * @returns {Promise<void>}
  */
-export async function routeInteraction(interaction) {
+export async function routeInteraction(interaction, ctx = {}) {
     if (!interaction.isChatInputCommand?.()) return;
+
+    const { pendingMap, redis } = ctx;
 
     const byName = getRegistryByName();
     const item = byName.get(interaction.commandName);
 
     if (!item) {
         log.error(`[router] 알 수 없는 커맨드: ${interaction.commandName}`);
-        await interaction.reply({ content: "알 수 없는 명령", ephemeral: true });
+        await interaction.reply({ content: "알 수 없는 명령", flags: 64 });
         return;
     }
 
     // 3초 제한 회피: 먼저 ACK
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
 
     try {
         if (item.key === "dev") {
@@ -48,24 +54,31 @@ export async function routeInteraction(interaction) {
         }
 
         if (item.key === "ping") {
-            const res = await publishProdCommand({
-                discordUserId: interaction.user.id,
-                guildId: interaction.guildId ?? "",
-                channelId: interaction.channelId ?? "",
-                cmd: "ping",
-                args: "",
-                interactionId: interaction.id,
-                interactionToken: interaction.token,
-            });
+            if (!redis) throw new Error("redis 주입이 없습니다.");
+            if (!pendingMap) throw new Error("pendingMap 주입이 없습니다.");
 
-            await interaction.editReply(`prod 명령 발행 완료 (tenant=${res.tenantKey})`);
+            const res = await publishProdCommand(
+                {
+                    discordUserId: interaction.user.id,
+                    guildId: interaction.guildId ?? "",
+                    channelId: interaction.channelId ?? "",
+                    cmd: "ping",
+                    args: "",
+                },
+                { redis }
+            );
+
+            // ✅ 결과 매칭 키(envelopeId)를 저장
+            pendingMap.set(res.envelopeId, { interaction });
+
+            // 여기서는 “접수”까지만. 최종 응답은 startProdResultConsumer가 editReply로 덮는다.
+            await interaction.editReply(`요청 접수됨 (tenant=${res.tenantKey})\n처리 중...`);
             return;
         }
 
         await interaction.editReply("아직 라우팅 미구현");
     } catch (err) {
         log.error("[router] 처리 실패", err);
-        // deferReply를 했으니 editReply로 마무리
         await interaction.editReply("처리 실패");
     }
 }
