@@ -16,7 +16,7 @@ export async function routeInteraction(interaction, ctx = {}) {
 
     const { pendingMap, redis } = ctx;
 
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply({ flags: 0 });
 
     try {
         const cmdName = String(interaction.commandName ?? "").trim();
