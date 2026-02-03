@@ -1,6 +1,6 @@
 // packages/master/src/initialize/startProdBridge.js
 import { logger } from "@bonsai/shared";
-import { runRedisStreamsResultConsumer } from "../bus/runRedisStreamsResultConsumer.js";
+import { runRedisStreamsResultConsumer } from "../bus/redisStreamsResultConsumer.js";
 
 const log = logger();
 
