@@ -13,7 +13,7 @@ function run(cmd, args) {
 async function main() {
     try {
         console.log("[dev-pm2] PM2 시작");
-        await run("npx", ["pm2", "start", ".\\infra\\pm2\\ecosystem.config.cjs"]);
+        await run("npx", ["pm2", "start", "./infra/pm2/ecosystem.config.cjs"]);
 
         console.log("[dev-pm2] 로그 출력 (Ctrl+C로 종료 시 전체 delete)");
         const logs = spawn("npx", ["pm2", "logs"], { stdio: "inherit", shell: true });
