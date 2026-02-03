@@ -2,6 +2,7 @@
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import { logger } from "@bonsai/shared";
 import { runRedisStreamsResultConsumer } from "../bus/redisStreamsResultConsumer.js";
+import { buildDiscordReplyPayload } from "../discord/buildDiscordReplyPayload.js";
 
 const log = logger();
 
@@ -175,88 +176,6 @@ async function handleResult({ resultEnv, pendingMap, source }) {
 }
 
 /**
- * worker data를 Discord editReply payload로 변환한다.
- * - data.embed === true 이면 data.title/description/fields/footer를 그대로 사용
- * - 없으면 metrics 기반 기본 임베드 생성
- * - embed가 아니면 content로 출력
- *
- * @param {any} data
- * @returns {{content?: string, embeds?: Array<any>}}
- */
-function buildDiscordReplyPayload(data) {
-    // 1) primitive or null -> text
-    if (data == null || typeof data !== "object") {
-        return { content: safeStringify(data) };
-    }
-
-    // 2) embed 모드가 아니면 text
-    if (data.embed !== true) {
-        if (typeof data.message === "string" && data.message.trim()) {
-            return { content: data.message };
-        }
-        return { content: safeStringify(data) };
-    }
-
-    // 3) embed 모드: "있으면 그대로 쓰기" 우선
-    const title = typeof data.title === "string" && data.title.trim() ? data.title : "result";
-    const description =
-        typeof data.description === "string" && data.description.trim()
-            ? data.description
-            : undefined;
-
-    // fields: [{name, value, inline}]
-    const fields = Array.isArray(data.fields)
-        ? data.fields
-              .filter((f) => f && typeof f === "object")
-              .map((f) => ({
-                  name: String(f.name ?? "").trim() || " ",
-                  value: String(f.value ?? "").trim() || " ",
-                  inline: Boolean(f.inline),
-              }))
-              .filter((f) => f.name !== " " || f.value !== " ")
-        : [];
-
-    // footer
-    const footerText =
-        typeof data.footer === "string" && data.footer.trim()
-            ? data.footer
-            : typeof data.raw === "string" && data.raw.trim()
-              ? data.raw
-              : "";
-
-    // 4) data.fields가 없으면 metrics로 기본 fields 만들기 (fallback)
-    if (fields.length === 0) {
-        const metrics = data.metrics && typeof data.metrics === "object" ? data.metrics : null;
-
-        const pushField = (name, value) => {
-            if (value == null) return;
-            const s = String(value).trim();
-            if (!s) return;
-            fields.push({ name, value: s, inline: true });
-        };
-
-        if (metrics) {
-            pushField("Discord → Worker", formatMs(metrics.discordToWorkerReceiveMs));
-            pushField("Worker 총 처리", formatMs(metrics.workerTotalMs));
-            pushField("Handler", formatMs(metrics.workerHandlerMs));
-        } else {
-            // metrics도 없으면 전체를 한 줄로라도 보여주기
-            fields.push({ name: "data", value: safeStringify(data), inline: false });
-        }
-    }
-
-    const embed = {
-        title,
-        description,
-        fields,
-        footer: footerText ? { text: footerText } : undefined,
-        timestamp: new Date().toISOString(),
-    };
-
-    return { content: "", embeds: [embed] };
-}
-
-/**
  * @param {any} v
  * @returns {string}
  */
@@ -268,19 +187,6 @@ function safeStringify(v) {
     } catch {
         return String(v);
     }
-}
-
-/**
- * @param {any} ms
- * @returns {string}
- */
-function formatMs(ms) {
-    if (ms == null) return "알 수 없음";
-    const n = Number(ms);
-    if (!Number.isFinite(n)) return "알 수 없음";
-
-    if (n > 0 && n < 1) return `${(n * 1000).toFixed(1)} µs`;
-    return `${n.toFixed(0)} ms`;
 }
 
 /**

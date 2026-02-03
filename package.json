@@ -12,8 +12,8 @@
         "stop": "pm2 stop all",
         "restart": "pm2 restart all",
         "logs": "pm2 logs",
-        "test": "jest --passWithNoTests",
-        "test:cov": "jest --coverage --passWithNoTests",
+        "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests",
+        "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --passWithNoTests",
         "lint": "eslint .",
         "format:check": "prettier . --check"
     },
