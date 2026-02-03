@@ -4,4 +4,4 @@ export { deployGuildCommands } from "./discord/deployGuildCommands.js";
 export { routeInteraction } from "./discord/interactionRouter.js";
 export { initializeMaster } from "./initialize/index.js";
 export { startDevBridge } from "./initialize/startDevBridge.js";
-export { startProdResultConsumer } from "./initialize/startProdResultConsumer.js";
+export { startProdBridge } from "./initialize/startProdBridge.js";

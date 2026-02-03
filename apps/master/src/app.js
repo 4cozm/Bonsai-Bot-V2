@@ -6,7 +6,7 @@ import {
     initializeMaster,
     routeInteraction,
     startDevBridge,
-    startProdResultConsumer,
+    startProdBridge,
 } from "@bonsai/master";
 import { logger } from "@bonsai/shared";
 import { GatewayIntentBits } from "discord.js";
@@ -90,7 +90,7 @@ async function main() {
 
     const pendingMap = new Map();
 
-    startProdResultConsumer({ redis, pendingMap, signal: ac.signal }).catch((err) => {
+    startProdBridge({ redis, pendingMap, signal: ac.signal }).catch((err) => {
         shutdown("prodResultConsumerError", err);
     });
 
