@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import winston from "winston";
-import DiscordWarnWebhookTransport from "./DiscordWarnWebhookTransport.js";
+import DiscordWarnWebhookTransport from "./discordWarnWebhookTransport.js";
 
 let _logger = null;
 const LOG_DIR = "logs";
