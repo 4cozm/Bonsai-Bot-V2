@@ -29,11 +29,15 @@ export async function routeInteraction(interaction, ctx = {}) {
         return;
     }
 
-    // 3초 제한 회피: 먼저 ACK
     await interaction.deferReply({ flags: 64 });
 
     try {
+        // -----------------------
+        // DEV: 발행 + 결과 대기형
+        // -----------------------
         if (item.key === "dev") {
+            if (!pendingMap) throw new Error("pendingMap 주입이 없습니다.");
+
             const cmd = interaction.options.getString("cmd", true);
             const args = interaction.options.getString("args", false) ?? "";
 
@@ -47,12 +51,18 @@ export async function routeInteraction(interaction, ctx = {}) {
                 interactionToken: interaction.token,
             });
 
+            pendingMap.set(res.envelopeId, { interaction });
+
+            // 여기서는 접수만. 최종 응답은 prodBridge가 editReply로 덮는다.
             await interaction.editReply(
-                `dev 명령 발행 완료 (tenant=${res.tenantKey}, targetDev=${res.targetDev})`
+                `dev 요청 접수됨 (tenant=${res.tenantKey}, targetDev=${res.targetDev})\n처리 중...`
             );
             return;
         }
 
+        // -----------------------
+        // PING: prod publish + 결과 대기형
+        // -----------------------
         if (item.key === "ping") {
             if (!redis) throw new Error("redis 주입이 없습니다.");
             if (!pendingMap) throw new Error("pendingMap 주입이 없습니다.");
@@ -68,10 +78,7 @@ export async function routeInteraction(interaction, ctx = {}) {
                 { redis }
             );
 
-            // ✅ 결과 매칭 키(envelopeId)를 저장
             pendingMap.set(res.envelopeId, { interaction });
-
-            // 여기서는 “접수”까지만. 최종 응답은 startProdResultConsumer가 editReply로 덮는다.
             await interaction.editReply(`요청 접수됨 (tenant=${res.tenantKey})\n처리 중...`);
             return;
         }
