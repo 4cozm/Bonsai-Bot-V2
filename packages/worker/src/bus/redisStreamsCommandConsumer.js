@@ -1,4 +1,6 @@
 import { buildResultEnvelope, logger } from "@bonsai/shared";
+import { getCommandMap } from "../commands/index.js";
+const commandMap = getCommandMap();
 
 /**
  * Redis Streams consumer group이 없으면 생성한다.
@@ -104,19 +106,34 @@ export async function runRedisStreamsCommandConsumer({
                         `[worker:redis] cmd 수신 tenant=${t} entryId=${entryId} envelopeId=${envelope.id} cmd=${envelope.cmd}`
                     );
 
-                    // --- 임시 handler: ping만 ---
+                    // --- commandMap 기반 디스패치 ---
                     let ok = true;
                     let data = null;
 
                     try {
-                        const cmd = String(envelope.cmd ?? "").trim();
-                        const args = envelope.args ?? "";
+                        const cmdName = String(envelope.cmd ?? "").trim();
+                        const def = commandMap.get(cmdName);
 
-                        if (cmd === "ping") {
-                            data = { text: "pong", args };
-                        } else {
+                        if (!def) {
                             ok = false;
-                            data = { error: `unknown cmd: ${cmd}` };
+                            data = { error: `알 수 없는 커맨드: ${cmdName}` };
+                        } else if (typeof def.execute !== "function") {
+                            ok = false;
+                            data = { error: `커맨드 핸들러 없음: ${cmdName}` };
+                        } else {
+                            // handler는 "도메인 결과"만 반환: { ok, data }
+                            const res = await def.execute(
+                                {
+                                    redis,
+                                    tenantKey: t,
+                                    log,
+                                    commandMap,
+                                },
+                                envelope
+                            );
+
+                            ok = Boolean(res?.ok);
+                            data = res?.data ?? null;
                         }
                     } catch (err) {
                         ok = false;

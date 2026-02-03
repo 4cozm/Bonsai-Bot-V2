@@ -1,38 +1,26 @@
 import { logger } from "@bonsai/shared";
+import { getCommandDefinitions, getDiscordSchemas } from "@bonsai/worker";
 import crypto from "node:crypto";
-import { defineDevCommand } from "./commands/dev.js";
-import { definePingCommand } from "./commands/ping.js";
 
 const log = logger();
-
-/**
- * master의 “정답 명령 레지스트리”
- * @returns {Array<{key:string, discord:object, route:object}>}
- */
-export function getCommandRegistry() {
-    return [
-        definePingCommand(),
-        defineDevCommand(),
-        // 앞으로 여기에 추가
-    ];
-}
 
 /**
  * Discord 배포용 스키마 배열만 반환한다.
  * @returns {Array<object>}
  */
 export function getDiscordCommandSchemas() {
-    return getCommandRegistry().map((c) => c.discord);
+    return getDiscordSchemas();
 }
 
 /**
- * 디스코드 commandName -> registryItem lookup
- * @returns {Map<string, object>}
+ * 디스코드 commandName -> commandDefinition lookup
+ * (배포/도구용. 라우팅에서 쓰지 않는 게 원칙)
+ * @returns {Map<string, any>}
  */
 export function getRegistryByName() {
     const map = new Map();
-    for (const item of getCommandRegistry()) {
-        map.set(item.discord.name, item);
+    for (const def of getCommandDefinitions()) {
+        map.set(def.discord.name, def);
     }
     return map;
 }

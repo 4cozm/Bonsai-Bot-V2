@@ -48,8 +48,7 @@ export async function publishDevCommand(input) {
 
     const envelope = buildCmdEnvelope({
         tenantKey,
-        cmd,
-        args,
+        args: JSON.stringify({ cmd, args }),
         meta: { discordUserId, guildId, channelId },
     });
 

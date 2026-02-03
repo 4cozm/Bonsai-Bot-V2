@@ -48,7 +48,7 @@ export async function startProdBridge({ redis, pendingMap, signal } = {}) {
             const data = resultEnv?.data ?? null;
 
             const content = ok
-                ? `✅ 처리 완료\n${safeStringify(data)}`
+                ? `${safeStringify(data)}`
                 : `❌ 처리 실패\n${safeStringify(data)}`;
 
             await interaction.editReply({ content });
