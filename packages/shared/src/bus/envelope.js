@@ -37,9 +37,9 @@ export function buildCmdEnvelope(input) {
                 : Math.floor(Date.now() / 1000),
     };
 
-    if (!tenantKey || !cmd) {
-        log.error("[envelope] 필수 값 누락(tenantKey/cmd)", { tenantKey, cmd });
-        throw new Error("envelope 필수 값 누락");
+    if (!tenantKey) {
+        log.error("[envelope] tenantKey 누락", { tenantKey });
+        throw new Error("tenantKey 누락");
     }
     if (!meta.discordUserId || !meta.guildId || !meta.channelId) {
         log.error("[envelope] meta 필수 값 누락", meta);
