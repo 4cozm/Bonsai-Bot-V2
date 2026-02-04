@@ -1,29 +1,29 @@
 module.exports = {
-  apps: [
-    {
-      name: "master",
-      script: "apps/bot/src/app.js",
-      watch: false,
+    apps: [
+        {
+            name: "master",
+            script: "apps/master/src/app.js",
+            watch: false,
 
-      autorestart: false,
-      max_restarts: 0,
+            autorestart: false,
+            max_restarts: 0,
 
-      env: { isDev: "true", RUN_MODE: "master" },
-      env_production: { isDev: "false", RUN_MODE: "master" },
-    },
-    {
-      name: "cat",
-      script: "apps/tenants/src/app.js",
-      env: { isDev: "true", RUN_MODE: "tenant-worker", TENANT: "cat" },
-      env_production: { isDev: "false", RUN_MODE: "tenant-worker", TENANT: "cat" },
-      watch: false,
-    },
-    {
-      name: "fish",
-      script: "apps/tenants/src/app.js",
-      env: { isDev: "true", RUN_MODE: "tenant-worker", TENANT: "fish" },
-      env_production: { isDev: "false", RUN_MODE: "tenant-worker", TENANT: "fish" },
-      watch: false,
-    },
-  ],
+            env: { RUN_MODE: "master" },
+            env_production: { RUN_MODE: "master" },
+        },
+        {
+            name: "CAT",
+            script: "apps/tenants/src/app.js",
+            env: { RUN_MODE: "tenant-worker", TENANT: "CAT" },
+            env_production: { RUN_MODE: "tenant-worker", TENANT: "CAT" },
+            watch: false,
+        },
+        {
+            name: "FISH",
+            script: "apps/tenants/src/app.js",
+            env: { RUN_MODE: "tenant-worker", TENANT: "FISH" },
+            env_production: { RUN_MODE: "tenant-worker", TENANT: "FISH" },
+            watch: false,
+        },
+    ],
 };

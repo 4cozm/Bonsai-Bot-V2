@@ -1,0 +1,16 @@
+{
+    "name": "@bonsai/master",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.js"
+    },
+    "dependencies": {
+        "dotenv": "^17.2.3",
+        "express": "^5.2.1",
+        "express-session": "^1.19.0",
+        "node-cron": "^4.2.1",
+        "discord.js": "^14.25.1"
+    }
+}

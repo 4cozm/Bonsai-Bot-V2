@@ -1,0 +1,102 @@
+// packages/shared/src/config/keys.js
+
+function envName(isDev) {
+    return isDev ? "dev" : "prod";
+}
+
+export const ENV_REQUIRED = Object.freeze({
+    master: Object.freeze({
+        common: Object.freeze([
+            //AWS SNS 관련
+            "AWS_REGION",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SNS_TOPIC",
+            "REDIS_URL",
+        ]),
+        dev: Object.freeze([
+            // dev master 전용
+            "DEV_SQS_QUEUE_URL",
+        ]),
+        prod: Object.freeze([
+            // prod master 전용
+
+            //Discord 관련 작업을 위해서
+            "DISCORD_APP_ID",
+            "DISCORD_TOKEN",
+            "DISCORD_TENANT_MAP",
+            "DISCORD_GUILD_ID",
+            //AWS SNS 관련
+            "DEV_DISCORD_MAP",
+
+            //AWS result SQS 풀링 관련
+            "PROD_SQS_RESULT_QUEUE_URL",
+        ]),
+    }),
+
+    worker: Object.freeze({
+        common: Object.freeze([
+            // worker 공용 (tenant 무관)
+        ]),
+        dev: Object.freeze([
+            // dev worker 전용
+        ]),
+        prod: Object.freeze([
+            // prod worker 전용
+        ]),
+    }),
+
+    global: Object.freeze({
+        common: Object.freeze([
+            // master/worker 공통
+        ]),
+        dev: Object.freeze([]),
+        prod: Object.freeze(["DISCORD_WEBHOOK_URL"]),
+    }),
+});
+
+/**
+ * 테넌트 prefix가 필요한 키 (tenant마다 값이 달라지는 것만)
+ * - CAT-*, FISH-* 로 KeyVault에 저장
+ */
+export const WORKER_TENANT_REQUIRED = Object.freeze([
+    // 예: "앵커꼽 ID"
+]);
+
+//--------------------------------------------------------
+
+/**
+ * 역할별 KeyVault 로딩 키 세트 반환.
+ * - sharedKeys: global/common + role/common + role/dev|prod
+ * - tenantKeys: worker만 (WORKER_TENANT_REQUIRED)
+ *
+ * @param {{role:"master"|"worker", isDev:boolean}} ctx
+ * @returns {{sharedKeys:string[], tenantKeys:string[]}}
+ */
+export function keySetsFor(ctx) {
+    const env = envName(ctx.isDev);
+    const role = ctx.role;
+
+    const globalKeys = [
+        ...(ENV_REQUIRED.global.common ?? []),
+        ...(ENV_REQUIRED.global?.[env] ?? []),
+    ];
+
+    const roleKeys = [...(ENV_REQUIRED[role]?.common ?? []), ...(ENV_REQUIRED[role]?.[env] ?? [])];
+
+    if (role === "master") {
+        return {
+            sharedKeys: [...globalKeys, ...roleKeys],
+            tenantKeys: [],
+        };
+    }
+
+    if (role === "worker") {
+        return {
+            sharedKeys: [...globalKeys, ...roleKeys],
+            tenantKeys: [...WORKER_TENANT_REQUIRED],
+        };
+    }
+
+    throw new Error(`unknown role: ${role}`);
+}

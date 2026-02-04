@@ -1,0 +1,21 @@
+{
+    "name": "@bonsai/external",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.js",
+        "./*": "./src/*.js"
+    },
+    "dependencies": {
+        "@aws-sdk/client-sns": "^3.978.0",
+        "@azure/identity": "^4.13.0",
+        "@azure/keyvault-secrets": "^4.10.0",
+        "@prisma/client": "^7.3.0",
+        "@smithy/node-http-handler": "^4.4.8",
+        "redis": "^5.10.0"
+    },
+    "devDependencies": {
+        "prisma": "^6.19.2"
+    }
+}
