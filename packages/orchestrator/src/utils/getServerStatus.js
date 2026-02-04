@@ -16,7 +16,7 @@ export async function getServerStatus() {
             "https://esi.evetech.net/latest/status/?datasource=tranquility",
             {
                 signal: controller.signal,
-                headers: { "accept": "application/json" },
+                headers: { accept: "application/json" },
             }
         );
 
