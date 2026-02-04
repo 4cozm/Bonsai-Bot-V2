@@ -51,7 +51,11 @@ export const ENV_REQUIRED = Object.freeze({
             // master/worker 공통
         ]),
         dev: Object.freeze([]),
-        prod: Object.freeze(["DISCORD_WEBHOOK_URL"]),
+        prod: Object.freeze([
+            "DISCORD_DT_WEBHOOK_URL",
+            "DISCORD_IT_PING_WEBHOOK_URL",
+            "DISCORD_ALERT_WEBHOOK_URL",
+        ]),
     }),
 });
 
@@ -70,7 +74,7 @@ export const WORKER_TENANT_REQUIRED = Object.freeze([
  * - sharedKeys: global/common + role/common + role/dev|prod
  * - tenantKeys: worker만 (WORKER_TENANT_REQUIRED)
  *
- * @param {{role:"master"|"worker", isDev:boolean}} ctx
+ * @param {{role:"master"|"worker"|"global", isDev:boolean}} ctx
  * @returns {{sharedKeys:string[], tenantKeys:string[]}}
  */
 export function keySetsFor(ctx) {
@@ -95,6 +99,13 @@ export function keySetsFor(ctx) {
         return {
             sharedKeys: [...globalKeys, ...roleKeys],
             tenantKeys: [...WORKER_TENANT_REQUIRED],
+        };
+    }
+
+    if (role === "global") {
+        return {
+            sharedKeys: [...globalKeys, ...roleKeys],
+            tenantKeys: [],
         };
     }
 

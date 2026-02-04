@@ -1,7 +1,6 @@
 // packages/master/src/initialize/startDevBridge.js
 import { createRedisClient, publishJson } from "@bonsai/external";
-import { logger } from "@bonsai/shared";
-import { publishCmdToRedisStream } from "../bus/publishCmdToRedisStream.js";
+import { logger, publishCmdToRedisStream } from "@bonsai/shared";
 import { runRedisStreamsResultConsumer } from "../bus/redisStreamsResultConsumer.js";
 import { runSqsCommandConsumer } from "../bus/runDevSqsCommandConsumer.js";
 import {

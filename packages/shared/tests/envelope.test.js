@@ -54,11 +54,12 @@ describe("shared/bus/envelope", () => {
         ).toThrow();
     });
 
-    test("buildCmdEnvelope: meta 필수 누락이면 throw", () => {
+    test("buildCmdEnvelope: replyTo가 있으면 meta 필수 누락 시 throw", () => {
         expect(() =>
             buildCmdEnvelope({
                 tenantKey: "CAT",
                 cmd: "ping",
+                replyTo: { source: "discord" },
                 meta: { discordUserId: "", guildId: "g1", channelId: "c1" },
             })
         ).toThrow();
@@ -67,6 +68,7 @@ describe("shared/bus/envelope", () => {
             buildCmdEnvelope({
                 tenantKey: "CAT",
                 cmd: "ping",
+                replyTo: { source: "discord" },
                 meta: { discordUserId: "u1", guildId: "", channelId: "c1" },
             })
         ).toThrow();
@@ -75,9 +77,28 @@ describe("shared/bus/envelope", () => {
             buildCmdEnvelope({
                 tenantKey: "CAT",
                 cmd: "ping",
+                replyTo: { source: "discord" },
                 meta: { discordUserId: "u1", guildId: "g1", channelId: "" },
             })
         ).toThrow();
+    });
+
+    test("buildCmdEnvelope: replyTo가 없으면 디스코드 meta 없이도 생성", () => {
+        const env = buildCmdEnvelope({
+            tenantKey: "__global__",
+            cmd: "dt.notify",
+            args: "{}",
+            meta: {},
+        });
+
+        expect(env).toEqual(
+            expect.objectContaining({
+                type: "cmd",
+                tenantKey: "__global__",
+                cmd: "dt.notify",
+            })
+        );
+        expect(typeof env.meta.issuedAt).toBe("number");
     });
 
     test("buildCmdEnvelope: issuedAt 없으면 자동 채움(숫자)", () => {

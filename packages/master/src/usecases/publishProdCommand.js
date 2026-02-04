@@ -1,6 +1,6 @@
 // packages/master/src/usecases/publishProdCommand.js
 import { buildCmdEnvelope, logger } from "@bonsai/shared";
-import { publishCmdToRedisStream } from "../bus/publishCmdToRedisStream.js";
+import { publishCmdToRedisStream } from "@bonsai/shared";
 import { resolveTenantKey } from "../config/tenantChannelMap.js";
 
 const log = logger();
