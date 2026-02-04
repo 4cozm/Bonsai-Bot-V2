@@ -14,5 +14,28 @@ services:
             retries: 20
         restart: unless-stopped
 
+    mysql:
+        image: mysql:8.4
+        container_name: bonsai-bot-mysql
+        ports:
+            - "3306:3306"
+        environment:
+            MYSQL_ROOT_PASSWORD: rootpw
+            MYSQL_DATABASE: bonsai
+            MYSQL_USER: bonsai
+            MYSQL_PASSWORD: bonsaipw
+            TZ: Asia/Seoul
+        command:
+            ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+        volumes:
+            - bonsai_bot_mysql_data:/var/lib/mysql
+        healthcheck:
+            test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "bonsai", "-pbonsaipw"]
+            interval: 5s
+            timeout: 3s
+            retries: 30
+        restart: unless-stopped
+
 volumes:
     bonsai_bot_redis_data:
+    bonsai_bot_mysql_data:

@@ -7,9 +7,10 @@ describe("worker/commands/index getCommandMap()", () => {
         const map = getCommandMap();
         expect(map).toBeInstanceOf(Map);
 
-        // 현재 기준: ping, dev
         expect(map.has("ping")).toBe(true);
         expect(map.has("dev")).toBe(true);
+        expect(map.has("esi-signup")).toBe(true);
+        expect(map.has("esi-approve")).toBe(true);
 
         const ping = map.get("ping");
         expect(typeof ping.execute).toBe("function");
@@ -19,6 +20,6 @@ describe("worker/commands/index getCommandMap()", () => {
         // index.js 내부 add()가 중복을 throw하도록 되어 있어야 함
         // (지금 구조가 이미 그렇다면 이 테스트는 “문서화된 기대치” 역할)
         const map = getCommandMap();
-        expect(map.size).toBeGreaterThanOrEqual(2);
+        expect(map.size).toBeGreaterThanOrEqual(4);
     });
 });

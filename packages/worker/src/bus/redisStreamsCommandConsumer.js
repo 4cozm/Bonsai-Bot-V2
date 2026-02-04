@@ -35,6 +35,7 @@ async function ensureGroup({ redis, streamKey, group }) {
  *
  * @param {object} params
  * @param {import("redis").RedisClientType} params.redis
+ * @param {import("@prisma/client").PrismaClient} [params.prisma]
  * @param {string} params.tenantKey
  * @param {AbortSignal} [params.signal]
  * @param {string} [params.group]
@@ -43,6 +44,7 @@ async function ensureGroup({ redis, streamKey, group }) {
  */
 export async function runRedisStreamsCommandConsumer({
     redis,
+    prisma,
     tenantKey,
     signal,
     group = "bonsai-worker",
@@ -132,6 +134,7 @@ export async function runRedisStreamsCommandConsumer({
                         } else {
                             const baseCtx = {
                                 redis,
+                                prisma,
                                 tenantKey: t,
                                 log,
                                 commandMap,

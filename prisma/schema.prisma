@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum RegStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  EXPIRED
+}
+
+model DiscordUser {
+  id         String   @id // discord snowflake (string)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // 캐릭터들
+  characters EveCharacter[]
+  // 등록 시도들
+  registrations EsiRegistration[]
+}
+
+model EveCharacter {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  discordUserId String
+  discordUser   DiscordUser @relation(fields: [discordUserId], references: [id], onDelete: Cascade)
+
+  characterId   BigInt   @unique // EVE character_id (global unique)
+  characterName String
+
+  // 자동판정(초기값) + 나중에 수동 변경 가능
+  isMain        Boolean  @default(false)
+
+  // (선택) ESI 토큰 저장 위치: 보안/회전 고려해서 암호화된 문자열로 저장하는게 보통
+  accessToken   String?  @db.Text
+  refreshToken  String?  @db.Text
+  tokenExpiresAt DateTime?
+
+  @@index([discordUserId])
+  @@index([characterName])
+}
+
+model EsiRegistration {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  discordUserId String
+  discordUser   DiscordUser @relation(fields: [discordUserId], references: [id], onDelete: Cascade)
+
+  // state에서 복원되는 nonce (1회성 소비)
+  stateNonce    String   @unique
+  stateExpAt    DateTime
+
+  // 디스코드 표시명(요청 시점)
+  discordNick   String
+
+  // 콜백에서 verify로 얻는 값
+  characterId   BigInt?
+  characterName String?
+
+  // main/alt “후보 판정”
+  mainCandidate Boolean  @default(false)
+
+  status        RegStatus @default(PENDING)
+
+  // 디스코드 응답 편의(예: editReply 대상)
+  guildId       String?
+  channelId     String?
+  messageId     String?
+
+  @@index([discordUserId, status])
+  @@index([createdAt])
+}
+
+// 테넌트 DB 소프트 격리: 워커 부팅 시 연결 DB의 tenantKey와 일치 검증(fail-fast)
+model TenantMeta {
+  id        String   @id @default(cuid())
+  tenantKey String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,6 +1,5 @@
 // packages/master/src/usecases/publishProdCommand.js
-import { buildCmdEnvelope, logger } from "@bonsai/shared";
-import { publishCmdToRedisStream } from "@bonsai/shared";
+import { buildCmdEnvelope, logger, publishCmdToRedisStream } from "@bonsai/shared";
 import { resolveTenantKey } from "../config/tenantChannelMap.js";
 
 const log = logger();
@@ -16,6 +15,7 @@ const log = logger();
  * @param {string} input.channelId
  * @param {string} input.cmd
  * @param {string} [input.args]
+ * @param {string} [input.discordNick] - 요청 시점 디스코드 표시명(예: esi-signup용)
  * @param {object} deps
  * @param {import("redis").RedisClientType} deps.redis
  * @returns {Promise<{tenantKey:string, envelopeId:string}>}
@@ -29,6 +29,7 @@ export async function publishProdCommand(input, deps) {
     const channelId = String(input.channelId ?? "");
     const cmd = String(input.cmd ?? "").trim();
     const args = input.args == null ? "" : String(input.args);
+    const discordNick = input.discordNick != null ? String(input.discordNick).trim() : "";
 
     if (!discordUserId || !guildId || !channelId) {
         log.error("[prod] 필수 메타 누락", { discordUserId, guildId, channelId });
@@ -46,7 +47,7 @@ export async function publishProdCommand(input, deps) {
         tenantKey,
         cmd,
         args,
-        meta: { discordUserId, guildId, channelId },
+        meta: { discordUserId, guildId, channelId, ...(discordNick && { discordNick }) },
     });
 
     await publishCmdToRedisStream({ redis, envelope });

@@ -18,6 +18,7 @@ const log = logger();
  * @param {string} input.meta.guildId
  * @param {string} input.meta.channelId
  * @param {number} [input.meta.issuedAt] - epoch seconds
+ * @param {string} [input.meta.discordNick] - ESI 가입 등 요청 시점 디스코드 표시명
  * @param {object} [input.replyTo]
  * @returns {object} envelope
  */
@@ -36,6 +37,9 @@ export function buildCmdEnvelope(input) {
                 ? metaRaw.issuedAt
                 : Math.floor(Date.now() / 1000),
     };
+    if (metaRaw.discordNick != null && String(metaRaw.discordNick).trim() !== "") {
+        meta.discordNick = String(metaRaw.discordNick).trim();
+    }
 
     if (!tenantKey) {
         log.error("[envelope] tenantKey 누락", { tenantKey });

@@ -7,6 +7,9 @@
         ".": "./src/index.js"
     },
     "dependencies": {
-        "@aws-sdk/client-sqs": "^3.978.0"
+        "@aws-sdk/client-sqs": "^3.978.0",
+        "@bonsai/shared": "*",
+        "@bonsai/external": "*",
+        "mysql2": "^3.16.3"
     }
 }

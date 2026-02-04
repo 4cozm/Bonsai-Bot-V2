@@ -1,7 +1,8 @@
 import { createRedisClient, loadVaultSecrets } from "@bonsai/external";
-import { keySetsFor, logger } from "@bonsai/shared";
+import { keySetsFor, loadEsiConfig, logger } from "@bonsai/shared";
 import dotenv from "dotenv";
 import { runRedisStreamsGlobalConsumer } from "../bus/redisStreamsGlobalConsumer.js";
+import { startEsiCallbackServer } from "../esi/esiCallbackServer.js";
 import { startDtScheduler } from "../schedulers/dtScheduler.js";
 
 const VAULT_URL_DEV = "https://bonsai-bot-dev.vault.azure.net/";
@@ -49,7 +50,13 @@ export async function initializeOrchestrator() {
 
     log.info(`[global:init] vault ok isDev=${isDev} sharedKeys=${sharedKeys.length}`);
 
+    loadEsiConfig();
+
     const redis = await createRedisClient();
+
+    // EVE OAuth 콜백: 테넌트 무관 전역 HTTP. prisma는 state의 tenantKey로 getPrisma(tenantKey) 사용.
+    const callbackPort = Number(process.env.ESI_CALLBACK_PORT ?? "0");
+    startEsiCallbackServer({ redis, port: callbackPort });
 
     const ac = new AbortController();
     const shutdown = async (sig) => {
@@ -57,6 +64,12 @@ export async function initializeOrchestrator() {
         ac.abort();
         try {
             await redis.quit();
+        } catch {
+            //무시
+        }
+        try {
+            const { disconnectPrisma } = await import("@bonsai/shared/db");
+            await disconnectPrisma();
         } catch {
             //무시
         }

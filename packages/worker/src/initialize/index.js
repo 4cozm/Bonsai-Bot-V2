@@ -1,7 +1,9 @@
 import { createRedisClient, loadVaultSecrets } from "@bonsai/external";
-import { keySetsFor, logger } from "@bonsai/shared";
+import { keySetsFor, loadEsiConfig, logger } from "@bonsai/shared";
+import { disconnectPrisma } from "@bonsai/shared/db";
 import dotenv from "dotenv";
 import { runRedisStreamsCommandConsumer } from "../bus/redisStreamsCommandConsumer.js";
+import { ensureTenantDbAndMigrate, getPrisma } from "../db/prisma.js";
 
 const VAULT_URL_DEV = "https://bonsai-bot-dev.vault.azure.net/";
 const VAULT_URL_PROD = "https://bonsai-bot.vault.azure.net/";
@@ -54,7 +56,11 @@ export async function initializeWorker(opts = {}) {
         `[worker:init] vault ok isDev=${isDev} tenant=${tenantKey} sharedKeys=${sharedKeys.length} tenantKeys=${tenantKeys.length}`
     );
 
+    loadEsiConfig();
+
     const redis = await createRedisClient();
+    await ensureTenantDbAndMigrate({ redis, tenantKey, log });
+    const prisma = getPrisma(tenantKey);
 
     const ac = new AbortController();
     const shutdown = async (sig) => {
@@ -62,6 +68,11 @@ export async function initializeWorker(opts = {}) {
         ac.abort();
         try {
             await redis.quit();
+        } catch {
+            //무시
+        }
+        try {
+            await disconnectPrisma(tenantKey);
         } catch {
             //무시
         }
@@ -73,6 +84,7 @@ export async function initializeWorker(opts = {}) {
 
     await runRedisStreamsCommandConsumer({
         redis,
+        prisma,
         tenantKey,
         signal: ac.signal,
         group: "bonsai-worker",

@@ -36,25 +36,44 @@ export const ENV_REQUIRED = Object.freeze({
 
     worker: Object.freeze({
         common: Object.freeze([
-            // worker 공용 (tenant 무관)
+            "REDIS_URL",
+            "ESI_STATE_SECRET",
+            // 테넌트 DB 연결 (getPrisma): 둘 중 하나 필수. Key Vault 공통
+            "TENANT_DB_URL_TEMPLATE",
+            "DATABASE_URL",
+            // 워커 부팅 시 테넌트 DB 없으면 CREATE DATABASE용. Key Vault 공통
+            "MYSQL_ADMIN_URL",
+            // 개발환경에서는 스스로 발급해서 로컬 .env에 저장
+            /**
+             * EVE_ESI_CLIENT_ID=
+             * EVE_ESI_CLIENT_SECRET=
+             * EVE_ESI_REDIRECT_URI=
+             */
         ]),
         dev: Object.freeze([
             // dev worker 전용
         ]),
-        prod: Object.freeze([
-            // prod worker 전용
-        ]),
+        prod: Object.freeze(["EVE_ESI_CLIENT_ID", "EVE_ESI_CLIENT_SECRET", "EVE_ESI_REDIRECT_URI"]),
     }),
 
     global: Object.freeze({
         common: Object.freeze([
-            // master/worker 공통
+            "REDIS_URL",
+            // 콜백에서 getPrisma(tenantKey)용. Key Vault 공통 (dev/prod 동일 키 로딩)
+            "TENANT_DB_URL_TEMPLATE",
+            "DATABASE_URL",
+            // global은 DB 생성 안 함. 단, Key Vault에 넣어둔 경우 로딩만 함
+            "MYSQL_ADMIN_URL",
         ]),
         dev: Object.freeze([]),
         prod: Object.freeze([
             "DISCORD_DT_WEBHOOK_URL",
             "DISCORD_IT_PING_WEBHOOK_URL",
             "DISCORD_ALERT_WEBHOOK_URL",
+            "ESI_STATE_SECRET",
+            "EVE_ESI_CLIENT_ID",
+            "EVE_ESI_CLIENT_SECRET",
+            "EVE_ESI_REDIRECT_URI",
         ]),
     }),
 });

@@ -1,14 +1,17 @@
 // packages/worker/src/commands/index.js
 import dev from "./dev.js";
+import esiApprove from "./esiApprove.js";
+import esiSignup from "./esiSignup.js";
 import ping from "./ping.js";
-// 앞으로 여기만 추가
 
 export function getCommandDefinitions() {
-    return [ping, dev];
+    return [ping, dev, esiSignup, esiApprove];
 }
 
 export function getDiscordSchemas() {
-    return getCommandDefinitions().map((c) => c.discord);
+    return getCommandDefinitions()
+        .filter((c) => c.discord != null)
+        .map((c) => c.discord);
 }
 
 export function getCommandMap() {
