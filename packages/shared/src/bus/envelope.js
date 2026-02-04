@@ -41,7 +41,10 @@ export function buildCmdEnvelope(input) {
         log.error("[envelope] tenantKey 누락", { tenantKey });
         throw new Error("tenantKey 누락");
     }
-    if (!meta.discordUserId || !meta.guildId || !meta.channelId) {
+    // 디스코드 인터랙션과 무관한(백그라운드/스케줄) cmd는 replyTo가 없을 수 있다.
+    // 이 경우 디스코드 메타는 빈 값이어도 허용한다.
+    const hasReplyTo = input?.replyTo != null;
+    if (hasReplyTo && (!meta.discordUserId || !meta.guildId || !meta.channelId)) {
         log.error("[envelope] meta 필수 값 누락", meta);
         throw new Error("envelope meta 필수 값 누락");
     }

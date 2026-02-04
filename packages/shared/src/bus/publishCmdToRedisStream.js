@@ -1,9 +1,9 @@
-import { logger } from "@bonsai/shared";
+import { logger } from "../utils/logger.js";
 
 const log = logger();
 
 /**
- * cmd envelope를 tenant stream(bonsai:cmd:{tenantKey})에 XADD 한다.
+ * cmd envelope를 Redis Streams(bonsai:cmd:{tenantKey})에 XADD 한다.
  *
  * @param {object} params
  * @param {import("redis").RedisClientType} params.redis
@@ -20,7 +20,7 @@ export async function publishCmdToRedisStream({ redis, envelope }) {
     const id = await redis.xAdd(streamKey, "*", { payload });
 
     log.info(
-        `[devBridge] streams publish ok stream=${streamKey} entryId=${id} envelopeId=${envelope?.id ?? ""} cmd=${envelope?.cmd ?? ""}`
+        `[bus] streams publish ok stream=${streamKey} entryId=${id} envelopeId=${envelope?.id ?? ""} cmd=${envelope?.cmd ?? ""}`
     );
 
     return id;

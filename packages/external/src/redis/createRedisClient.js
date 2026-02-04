@@ -17,6 +17,7 @@ export async function createRedisClient(opts = {}) {
 
     client.on("error", (err) => {
         log.warn(`[redis] client error: ${err?.message ?? String(err)}`);
+        process.exit(1);
     });
 
     await client.connect();

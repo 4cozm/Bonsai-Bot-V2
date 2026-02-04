@@ -33,7 +33,7 @@ function buildDiscordContent(info) {
 export default class DiscordWarnWebhookTransport extends Transport {
     constructor(opts = {}) {
         super(opts);
-        this.webhookUrl = (opts.webhookUrl || "").trim();
+        this.webhookUrl = (opts.webhookUrl || "").trim(); //TODO DISCORD_IP_PING_WEBHOOK_URL
         this.serviceName = (opts.serviceName || "app").trim();
         this.enabled = Boolean(this.webhookUrl);
     }
