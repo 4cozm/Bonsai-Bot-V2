@@ -67,12 +67,14 @@ function findPrismaRoot() {
 
 /**
  * prisma migrate deploy를 tenant DB URL로 실행.
+ * PM2 등에서 PATH에 npx가 없을 수 있으므로 node로 Prisma CLI 직접 실행.
  */
 function runPrismaMigrateDeploy(tenantDbUrl, log) {
     const root = findPrismaRoot();
+    const prismaCli = path.join(root, "node_modules", "prisma", "build", "index.js");
     return new Promise((resolve, reject) => {
         const env = { ...process.env, DATABASE_URL: tenantDbUrl };
-        const child = spawn("npx", ["prisma", "migrate", "deploy"], {
+        const child = spawn(process.execPath, [prismaCli, "migrate", "deploy"], {
             cwd: root,
             env,
             stdio: "inherit",

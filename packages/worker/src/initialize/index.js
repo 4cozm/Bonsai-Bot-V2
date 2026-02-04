@@ -38,6 +38,30 @@ export async function initializeWorker(opts = {}) {
 
     const { sharedKeys, tenantKeys } = keySetsFor({ role: "worker", isDev });
 
+    // #region agent log
+    const hasTPre = Boolean(process.env.TENANT_DB_URL_TEMPLATE?.trim());
+    const hasDPre = Boolean(process.env.DATABASE_URL?.trim());
+    fetch("http://127.0.0.1:7242/ingest/7070e61a-5c08-41bb-b8db-31b1f8c2675e", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            location: "worker/initialize:beforeVault",
+            message: "worker init before loadVaultSecrets",
+            data: {
+                isDev,
+                sharedKeysCount: sharedKeys.length,
+                hasTenantDbInSharedKeys: sharedKeys.includes("TENANT_DB_URL_TEMPLATE"),
+                hasDatabaseUrlInSharedKeys: sharedKeys.includes("DATABASE_URL"),
+                envHasTenantDbUrlTemplate: hasTPre,
+                envHasDatabaseUrl: hasDPre,
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            hypothesisId: "B",
+        }),
+    }).catch(() => {});
+    // #endregion
+
     await loadVaultSecrets({
         vaultUrl,
         sharedKeys,
@@ -45,6 +69,26 @@ export async function initializeWorker(opts = {}) {
         tenant: process.env.TENANT,
         log,
     });
+
+    // #region agent log
+    const hasTPost = Boolean(process.env.TENANT_DB_URL_TEMPLATE?.trim());
+    const hasDPost = Boolean(process.env.DATABASE_URL?.trim());
+    fetch("http://127.0.0.1:7242/ingest/7070e61a-5c08-41bb-b8db-31b1f8c2675e", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            location: "worker/initialize:afterVault",
+            message: "worker init after loadVaultSecrets",
+            data: {
+                envHasTenantDbUrlTemplate: hasTPost,
+                envHasDatabaseUrl: hasDPost,
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            hypothesisId: "C",
+        }),
+    }).catch(() => {});
+    // #endregion
 
     const tenantKey = String(process.env.TENANT ?? "").trim();
     if (!tenantKey) {
