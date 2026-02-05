@@ -1,8 +1,7 @@
 name: CI
 
+# PR이 열린 상태(머지 대기)에서만 실행. dev에 직접 push/머지 시에는 실행하지 않음.
 on:
-    push:
-        branches: ["dev"]
     pull_request:
         branches: ["dev"]
 
