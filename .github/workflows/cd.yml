@@ -1,0 +1,37 @@
+# CD: main 브랜치 push 시 배포 서버에 SSH로 접속해 코드 반영 후 PM2 리로드
+# 필요한 GitHub Secrets: CD 문서 참고 또는 아래 "필요한 환경변수" 섹션
+
+name: CD
+
+on:
+    push:
+        branches: ["main"]
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Deploy via SSH
+              uses: appleboy/ssh-action@v1.0.3
+              with:
+                  host: ${{ secrets.SSH_HOST }}
+                  username: ${{ secrets.SSH_USER }}
+                  key: ${{ secrets.SSH_PRIVATE_KEY }}
+                  port: ${{ secrets.SSH_PORT || 22 }}
+                  script: |
+                      set -e
+                      DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+                      DEPLOY_BRANCH="${{ secrets.DEPLOY_BRANCH || 'main' }}"
+                      if [ -z "$DEPLOY_PATH" ]; then
+                        echo "DEPLOY_PATH 미설정"
+                        exit 1
+                      fi
+                      cd "$DEPLOY_PATH"
+                      git fetch origin
+                      git checkout "$DEPLOY_BRANCH"
+                      git pull origin "$DEPLOY_BRANCH"
+                      npm ci
+                      npx prisma generate
+                      npx prisma migrate deploy
+                      npx pm2 reload ./infra/pm2/ecosystem.config.cjs --env production
+                      npx pm2 save || true
