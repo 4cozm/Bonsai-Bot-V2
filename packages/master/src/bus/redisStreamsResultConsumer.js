@@ -79,14 +79,17 @@ export async function runRedisStreamsResultConsumer({
                         continue;
                     }
 
-                    if (!result || result.type !== "result" || !result.inReplyTo) {
+                    const hasReply = result?.inReplyTo;
+                    const hasBroadcast =
+                        result?.meta?.broadcastToChannel && result?.meta?.channelId;
+                    if (!result || result.type !== "result" || (!hasReply && !hasBroadcast)) {
                         log.warn(`[master:redis] result 형식 이상 entryId=${entryId}`);
                         await redis.xAck(streamKey, group, entryId);
                         continue;
                     }
 
                     log.info(
-                        `[master:redis] result 수신 entryId=${entryId} inReplyTo=${result.inReplyTo} ok=${result.ok}`
+                        `[master:redis] result 수신 entryId=${entryId} inReplyTo=${result.inReplyTo ?? "(broadcast)"} ok=${result.ok}`
                     );
 
                     try {

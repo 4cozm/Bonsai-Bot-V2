@@ -129,15 +129,55 @@ async function startSqsResultPolling({ pendingMap, signal } = {}) {
 }
 
 /**
- * resultEnv를 pendingMap과 매칭해 Discord 응답을 닫는다.
+ * resultEnv를 pendingMap과 매칭해 Discord 응답을 닫거나, 채널 브로드캐스트로 전송한다.
  *
  * @param {object} params
  * @param {any} params.resultEnv
  * @param {Map<string, any>} params.pendingMap
  * @param {"redis"|"sqs"} params.source
- * @returns {Promise<boolean>} handled(=pending 매칭되어 최종 응답까지 완료했는지)
+ * @returns {Promise<boolean>} handled
  */
 async function handleResult({ resultEnv, pendingMap, source }) {
+    const meta = resultEnv?.meta ?? {};
+    const broadcastToChannel = Boolean(meta.broadcastToChannel);
+    const channelId = String(meta.channelId ?? "").trim();
+
+    if (broadcastToChannel && channelId) {
+        const ok = Boolean(resultEnv?.ok);
+        const data = resultEnv?.data ?? null;
+        const token = String(process.env.DISCORD_TOKEN ?? "").trim();
+        if (!token) {
+            log.warn("[prodBridge] 채널 브로드캐스트 실패: DISCORD_TOKEN 없음");
+            return true;
+        }
+        const payload = buildDiscordReplyPayload(ok ? data : { message: safeStringify(data) });
+        const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
+        try {
+            const res = await fetch(url, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bot ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                log.error("[prodBridge] 채널 브로드캐스트 실패", {
+                    status: res.status,
+                    body: text,
+                });
+            } else {
+                log.info(
+                    `[prodBridge] 채널 브로드캐스트 완료 source=${source} channelId=${channelId}`
+                );
+            }
+        } catch (err) {
+            log.error("[prodBridge] 채널 브로드캐스트 요청 실패", err);
+        }
+        return true;
+    }
+
     const inReplyTo = String(resultEnv?.inReplyTo ?? "").trim();
     if (!inReplyTo) {
         log.info(`[prodBridge] inReplyTo 없음 source=${source}`);
@@ -146,12 +186,10 @@ async function handleResult({ resultEnv, pendingMap, source }) {
 
     const pending = pendingMap.get(inReplyTo);
     if (!pending) {
-        // Redis는 ACK되면서 흘러가고, SQS는 삭제하지 않으면 재수신됨.
         log.info(`[prodBridge] pending 없음 source=${source} inReplyTo=${inReplyTo}`);
         return false;
     }
 
-    // 중복 처리 방지
     pendingMap.delete(inReplyTo);
 
     const interaction = pending.interaction ?? pending;
@@ -165,7 +203,7 @@ async function handleResult({ resultEnv, pendingMap, source }) {
 
     if (!ok) {
         await interaction.editReply({ content: `❌ 처리 실패\n${safeStringify(data)}` });
-        return;
+        return true;
     }
 
     const render = buildDiscordReplyPayload(data);

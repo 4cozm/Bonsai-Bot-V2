@@ -1,11 +1,12 @@
 // packages/worker/src/commands/index.js
 import dev from "./dev.js";
-import esiApprove from "./esiApprove.js";
+import esiComplete from "./esiComplete.js";
+import esiList from "./esiList.js";
 import esiSignup from "./esiSignup.js";
 import ping from "./ping.js";
 
 export function getCommandDefinitions() {
-    return [ping, dev, esiSignup, esiApprove];
+    return [ping, dev, esiSignup, esiComplete, esiList];
 }
 
 export function getDiscordSchemas() {
