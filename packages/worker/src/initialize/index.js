@@ -46,7 +46,6 @@ export async function initializeWorker(opts = {}) {
         log,
     });
 
-
     const tenantKey = String(process.env.TENANT ?? "").trim();
     if (!tenantKey) {
         log.error("[worker:init] TENANT가 비어있음");

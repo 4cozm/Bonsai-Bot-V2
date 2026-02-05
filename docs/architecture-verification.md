@@ -14,8 +14,8 @@
 ## 2. Tenant Worker – 명령 SoT, unknown cmd 반환 형식
 
 - **redisStreamsCommandConsumer.js**:  
-  `cmd` 없음 → `execOk = false`, `execData = { error: "cmd가 비어있음" }`.  
-  `commandMap`에 없음 → `execData = { error: \`unknown cmd: ${cmdName}\` }`.  
+   `cmd` 없음 → `execOk = false`, `execData = { error: "cmd가 비어있음" }`.  
+   `commandMap`에 없음 → `execData = { error: \`unknown cmd: ${cmdName}\` }`.  
 그대로 `buildResultEnvelope({ ok: execOk, data: execData })`로 반환.
 - **esiSignup / esiApprove / dev**: 실패 시 모두 `{ ok: false, data: { error: "…" } }` 형태.
 
