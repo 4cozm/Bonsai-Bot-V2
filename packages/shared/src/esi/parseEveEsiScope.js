@@ -3,6 +3,8 @@
 const DEFAULT_SCOPE = "esi-character.read_character.v1";
 const REQUIRED_MSG =
     "EVE_ESI_SCOPE가 필요합니다. (운영에서는 Key Vault에 JSON 배열 또는 공백 구분 문자열로 설정)";
+const INVALID_JSON_MSG =
+    "EVE_ESI_SCOPE JSON 형식이 잘못되었습니다. (JSON 배열 또는 공백 구분 문자열로 설정)";
 
 /**
  * EVE_ESI_SCOPE 환경변수 값을 OAuth scope 문자열로 정규화한다.
@@ -39,6 +41,7 @@ export function parseEveEsiScope(envValue, options = {}) {
             return parts.join(" ");
         } catch (err) {
             if (err instanceof Error && err.message === REQUIRED_MSG) throw err;
+            if (required) throw new Error(INVALID_JSON_MSG);
             return raw;
         }
     }
