@@ -56,6 +56,7 @@ export default {
                 description: `<@${discordUserId}> 님의 연동 캐릭터입니다.`,
                 fields: [{ name: "캐릭터", value, inline: false }],
                 footer: `총 ${chars.length}명`,
+                color: 0x9b59b6,
             },
         };
     },

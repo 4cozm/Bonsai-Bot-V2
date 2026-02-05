@@ -29,6 +29,15 @@ export function buildDiscordReplyPayload(data) {
               ? data.raw
               : "";
 
+    const singleColor =
+        typeof data.color === "number" &&
+        Number.isInteger(data.color) &&
+        data.color >= 0 &&
+        data.color <= 0xffffff
+            ? data.color
+            : undefined;
+    const singleTimestamp = data.timestamp === false ? undefined : new Date().toISOString();
+
     const embed = {
         title,
         description,
@@ -39,14 +48,15 @@ export function buildDiscordReplyPayload(data) {
                   ? []
                   : [{ name: "data", value: safeStringify(data), inline: false }],
         footer: footerText ? { text: footerText } : undefined,
-        timestamp: new Date().toISOString(),
+        ...(singleColor != null && { color: singleColor }),
+        ...(singleTimestamp != null && { timestamp: singleTimestamp }),
     };
 
     return { content: "", embeds: [embed] };
 }
 
 /**
- * @param {object} spec - { title?, description?, fields?, footer? }
+ * @param {object} spec - { title?, description?, fields?, footer?, color?, timestamp? }
  * @param {object} fallback - 공통 footer 등 폴백용
  */
 function buildOneEmbed(spec, fallback) {
@@ -67,12 +77,21 @@ function buildOneEmbed(spec, fallback) {
             : typeof fallback?.footer === "string" && fallback.footer.trim()
               ? fallback.footer
               : "";
+    const color =
+        typeof spec.color === "number" &&
+        Number.isInteger(spec.color) &&
+        spec.color >= 0 &&
+        spec.color <= 0xffffff
+            ? spec.color
+            : undefined;
+    const timestamp = spec.timestamp === false ? undefined : new Date().toISOString();
     return {
         title,
         description,
         fields: fields.length > 0 ? fields : [{ name: " ", value: " ", inline: false }],
         footer: footerText ? { text: footerText } : undefined,
-        timestamp: new Date().toISOString(),
+        ...(color != null && { color }),
+        ...(timestamp != null && { timestamp }),
     };
 }
 
