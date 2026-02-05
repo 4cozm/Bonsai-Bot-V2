@@ -6,6 +6,9 @@ import { buildDiscordReplyPayload } from "../discord/buildDiscordReplyPayload.js
 
 const log = logger();
 
+/** 채널 브로드캐스트 허용 길드(서버) ID. meta.guildId가 없거나 이 값과 일치할 때만 전송. (Key Vault 미포함, 코드 고정) */
+const DEFAULT_GUILD_ID = "1462083835306184872";
+
 /**
  * Prod Master 결과 수신기:
  * - Redis Streams(result) 소비 → pendingMap 매칭 → Discord editReply 종료
@@ -143,6 +146,15 @@ async function handleResult({ resultEnv, pendingMap, source }) {
     const channelId = String(meta.channelId ?? "").trim();
 
     if (broadcastToChannel && channelId) {
+        const guildId = String(meta.guildId ?? "").trim();
+        const allowedGuild = !guildId || guildId === DEFAULT_GUILD_ID;
+        if (!allowedGuild) {
+            log.warn("[prodBridge] 채널 브로드캐스트 스킵: guildId 불일치", {
+                guildId,
+                allowed: DEFAULT_GUILD_ID,
+            });
+            return true;
+        }
         const ok = Boolean(resultEnv?.ok);
         const data = resultEnv?.data ?? null;
         const token = String(process.env.DISCORD_TOKEN ?? "").trim();
@@ -166,10 +178,12 @@ async function handleResult({ resultEnv, pendingMap, source }) {
                 log.error("[prodBridge] 채널 브로드캐스트 실패", {
                     status: res.status,
                     body: text,
+                    channelId,
+                    guildId: guildId || DEFAULT_GUILD_ID,
                 });
             } else {
                 log.info(
-                    `[prodBridge] 채널 브로드캐스트 완료 source=${source} channelId=${channelId}`
+                    `[prodBridge] 채널 브로드캐스트 완료 source=${source} channelId=${channelId} guildId=${guildId || DEFAULT_GUILD_ID}`
                 );
             }
         } catch (err) {

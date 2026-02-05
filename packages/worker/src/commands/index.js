@@ -3,10 +3,12 @@ import dev from "./dev.js";
 import esiComplete from "./esiComplete.js";
 import esiList from "./esiList.js";
 import esiSignup from "./esiSignup.js";
+import gasPrice from "./gasPrice.js";
+import mineralPrice from "./mineralPrice.js";
 import ping from "./ping.js";
 
 export function getCommandDefinitions() {
-    return [ping, dev, esiSignup, esiComplete, esiList];
+    return [ping, dev, esiSignup, esiComplete, esiList, gasPrice, mineralPrice];
 }
 
 export function getDiscordSchemas() {
