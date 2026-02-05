@@ -1,30 +1,28 @@
-// packages/worker/src/commands/esiApprove.js
+// packages/worker/src/commands/esiComplete.js
 import { logger } from "@bonsai/shared";
 
 const log = logger();
 
 /**
- * isMain 정책: 유저당 main 1개. mainCandidate인 등록을 승인하면 isMain=true.
- * 이미 해당 유저에게 main 캐릭터가 있으면 기존 main을 false로 바꾸고 새 캐릭터를 main으로 설정(교체).
+ * 콜백 후 자동 완료: EsiRegistration 확정 + EveCharacter 등록.
+ * 콜백 후 자동 확정. EveCharacter upsert + EsiRegistration CONFIRMED. 소유자는 등록의 discordUserId로 간주.
+ * 결과는 채널 브로드캐스트용으로 반환(meta.broadcastToChannel, meta.channelId).
  */
 export default {
-    name: "esi-approve",
-    // 슬래시 커맨드 아님. 버튼 interaction으로만 호출됨 (custom_id: esi-approve:{registrationId})
+    name: "esi-complete",
     discord: null,
 
     /**
-     * 승인 버튼 처리: clickerDiscordId === discordUserId일 때만 CONFIRMED + EveCharacter 확정.
-     *
      * @param {object} ctx
      * @param {import("@prisma/client").PrismaClient} ctx.prisma
      * @param {string} ctx.tenantKey
      * @param {any} envelope
-     * @returns {Promise<{ok:boolean, data:any}>}
+     * @returns {Promise<{ok:boolean, data:any, meta?: object}>}
      */
     async execute(ctx, envelope) {
         const prisma = ctx?.prisma;
         const meta = envelope?.meta ?? {};
-        const clickerDiscordId = String(meta.discordUserId ?? "").trim();
+        const channelId = String(meta.channelId ?? "").trim();
 
         let args = envelope?.args ?? "";
         if (typeof args === "string") {
@@ -39,11 +37,11 @@ export default {
         if (!registrationId) {
             return { ok: false, data: { error: "등록 ID가 없습니다." } };
         }
-        if (!clickerDiscordId) {
-            return { ok: false, data: { error: "요청자 정보가 없습니다." } };
+        if (!channelId) {
+            return { ok: false, data: { error: "채널 정보가 없습니다." } };
         }
         if (!prisma) {
-            log.warn("[cmd:esi-approve] prisma 주입 없음");
+            log.warn("[cmd:esi-complete] prisma 주입 없음");
             return { ok: false, data: { error: "시스템 설정 오류" } };
         }
 
@@ -51,7 +49,7 @@ export default {
             where: { id: registrationId },
         });
         if (!reg) {
-            log.warn("[cmd:esi-approve] 등록 없음 id=" + registrationId);
+            log.warn("[cmd:esi-complete] 등록 없음 id=" + registrationId);
             return { ok: false, data: { error: "해당 등록을 찾을 수 없거나 만료되었습니다." } };
         }
         if (reg.status !== "PENDING") {
@@ -65,18 +63,13 @@ export default {
                 },
             };
         }
-        if (reg.discordUserId !== clickerDiscordId) {
-            log.warn(
-                `[cmd:esi-approve] 소유자 불일치 registrationId=${registrationId} expected=${reg.discordUserId} clicker=${clickerDiscordId}`
-            );
-            await prisma.esiRegistration.update({
-                where: { id: registrationId },
-                data: { status: "REJECTED" },
-            });
-            return { ok: false, data: { error: "본인만 승인할 수 있습니다." } };
-        }
 
         const isMainCandidate = Boolean(reg.mainCandidate);
+
+        const existedBefore = await prisma.eveCharacter.findUnique({
+            where: { characterId: reg.characterId },
+        });
+        const isReLink = existedBefore != null;
 
         try {
             await prisma.$transaction(async (tx) => {
@@ -110,21 +103,60 @@ export default {
                 });
             });
         } catch (err) {
-            log.error("[cmd:esi-approve] transaction 실패", err);
+            log.error("[cmd:esi-complete] transaction 실패", err);
             return { ok: false, data: { error: "저장 중 오류가 발생했습니다." } };
         }
 
+        const discordUserId = reg.discordUserId;
+        const newChar = {
+            characterId: reg.characterId,
+            characterName: reg.characterName,
+            isMain: isMainCandidate,
+        };
+
+        const allChars = await prisma.eveCharacter.findMany({
+            where: { discordUserId },
+            orderBy: [{ isMain: "desc" }, { characterName: "asc" }],
+        });
+        const existingNames = allChars
+            .filter((c) => String(c.characterId) !== String(reg.characterId))
+            .map((c) => (c.isMain ? `**${c.characterName}** (메인)` : c.characterName));
+        const processedCharLabel = newChar.isMain
+            ? `**${newChar.characterName}** (메인)`
+            : newChar.characterName;
+
+        const processedFieldName = isReLink ? "재연동(정보 갱신)된 캐릭터" : "새로 추가된 캐릭터";
+
+        const fields = [
+            { name: "디스코드 계정", value: `<@${discordUserId}>`, inline: false },
+            {
+                name: "기존 연동 캐릭터",
+                value: existingNames.length > 0 ? existingNames.join(", ") : "없음",
+                inline: false,
+            },
+            { name: processedFieldName, value: processedCharLabel, inline: false },
+        ];
+
+        const description = isReLink
+            ? "이미 연동된 캐릭터 정보를 갱신했습니다."
+            : "캐릭터가 등록되었습니다.";
+
         log.info(
-            `[cmd:esi-approve] 승인 완료 registrationId=${registrationId} characterId=${reg.characterId} characterName=${reg.characterName}`
+            `[cmd:esi-complete] 완료 registrationId=${registrationId} characterId=${reg.characterId} characterName=${reg.characterName} isReLink=${isReLink}`
         );
 
         return {
             ok: true,
             data: {
                 embed: true,
-                title: "EVE 캐릭터 연동 완료",
-                description: `**${reg.characterName}** 캐릭터가 연동되었습니다.${isMainCandidate ? " (메인 캐릭터)" : ""}`,
+                title: "EVE ESI 연동 완료",
+                description,
+                fields,
                 footer: `characterId: ${reg.characterId}`,
+            },
+            meta: {
+                broadcastToChannel: true,
+                channelId,
             },
         };
     },

@@ -1,11 +1,16 @@
 // packages/orchestrator/src/esi/esiCallbackServer.js
 /**
  * EVE OAuth 콜백 HTTP 서버.
- * 호스팅: Global Orchestrator(테넌트 무관 전역 작업). 레포에 기존 HTTP 서버가 없어
- * 오케스트레이터에 추가함. Discord 메시지(승인 버튼)는 봇 토큰으로 채널에 POST 전송.
- * pendingMap과 연결하지 않음(아키텍처 원칙).
+ * 호스팅: Global Orchestrator. 콜백 후 자동 완료를 위해 Worker에 esi-complete 명령을 발행한다.
+ * 결과 메시지는 Worker → Master → 채널 브로드캐스트로 전달된다.
  */
-import { consumeNonce, logger, verifyState } from "@bonsai/shared";
+import {
+    buildCmdEnvelope,
+    consumeNonce,
+    logger,
+    publishCmdToRedisStream,
+    verifyState,
+} from "@bonsai/shared";
 import { getPrisma } from "@bonsai/shared/db";
 import http from "node:http";
 import { decodeEveJwtPayload } from "./decodeEveJwt.js";
@@ -16,45 +21,7 @@ const log = logger();
 const NONCE_KEY_PREFIX = "bonsai:esi:nonce:";
 
 /**
- * Discord 채널에 "승인 버튼" 메시지 전송.
- * 봇 토큰으로 POST /channels/:id/messages. pendingMap에 연결하지 않음.
- *
- * @param {{ channelId: string, registrationId: string, discordToken: string }}
- */
-async function sendApprovalButtonMessage({ channelId, registrationId, discordToken }) {
-    const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
-    const payload = {
-        content: "EVE 캐릭터 연동을 확정하려면 아래 **승인** 버튼을 눌러 주세요.",
-        components: [
-            {
-                type: 1,
-                components: [
-                    {
-                        type: 2,
-                        style: 1,
-                        label: "승인",
-                        custom_id: `esi-approve:${registrationId}`,
-                    },
-                ],
-            },
-        ],
-    };
-    const res = await fetch(url, {
-        method: "POST",
-        headers: {
-            Authorization: `Bot ${discordToken}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-        const text = await res.text();
-        log.error("[esi:callback] Discord 메시지 전송 실패", { status: res.status, body: text });
-    }
-}
-
-/**
- * 콜백 핸들러: state 검증 → nonce 소비 → 토큰 교환 → JWT 디코딩 → DB 업데이트 → Discord 버튼 메시지.
+ * 콜백 핸들러: state 검증 → nonce 소비 → 토큰 교환 → JWT 디코딩 → DB 업데이트 → Worker에 esi-complete 발행.
  * 테넌트 DB는 state의 tenantKey로 getPrisma(tenantKey) 획득(중앙집중).
  *
  * @param {URL} url
@@ -76,7 +43,6 @@ async function handleCallback(url, deps) {
     const clientId = String(process.env.EVE_ESI_CLIENT_ID ?? "").trim();
     const clientSecret = String(process.env.EVE_ESI_CLIENT_SECRET ?? "").trim();
     const redirectUri = String(process.env.EVE_ESI_REDIRECT_URI ?? "").trim();
-    const discordToken = String(process.env.DISCORD_TOKEN ?? "").trim();
 
     if (!secret || !clientId || !clientSecret || !redirectUri) {
         log.error("[esi:callback] ESI 설정 누락");
@@ -122,8 +88,13 @@ async function handleCallback(url, deps) {
         return { statusCode: 400, body: "Invalid token" };
     }
 
-    const mainCandidate =
-        String(payload.discordNick ?? "").trim() === String(charInfo.characterName ?? "").trim();
+    const discordNickNorm = String(payload.discordNick ?? "")
+        .trim()
+        .toLowerCase();
+    const charNameNorm = String(charInfo.characterName ?? "")
+        .trim()
+        .toLowerCase();
+    const mainCandidate = discordNickNorm !== "" && discordNickNorm === charNameNorm;
 
     const reg = await prisma.esiRegistration.findUnique({
         where: { stateNonce: payload.stateNonce },
@@ -145,19 +116,31 @@ async function handleCallback(url, deps) {
         },
     });
 
-    if (discordToken && payload.channelId) {
-        await sendApprovalButtonMessage({
-            channelId: payload.channelId,
-            registrationId: reg.id,
-            discordToken,
-        });
+    const channelId = String(reg.channelId ?? payload.channelId ?? "").trim();
+    if (channelId) {
+        try {
+            const envelope = buildCmdEnvelope({
+                tenantKey,
+                cmd: "esi-complete",
+                args: JSON.stringify({ registrationId: reg.id }),
+                meta: {
+                    discordUserId: reg.discordUserId,
+                    guildId: String(reg.guildId ?? ""),
+                    channelId,
+                },
+            });
+            await publishCmdToRedisStream({ redis, envelope });
+            log.info("[esi:callback] esi-complete 발행 완료 registrationId=" + reg.id);
+        } catch (err) {
+            log.error("[esi:callback] esi-complete 발행 실패", err);
+        }
     } else {
-        log.warn("[esi:callback] Discord 토큰/채널 없어 버튼 메시지 미전송");
+        log.warn("[esi:callback] channelId 없어 esi-complete 미발행");
     }
 
     return {
         statusCode: 200,
-        body: "EVE 연동이 등록되었습니다. Discord에서 승인 버튼을 눌러 주세요.",
+        body: "EVE 연동이 완료되었습니다. Discord 채널에 결과를 보냈습니다.",
         headers: { "Content-Type": "text/plain; charset=utf-8" },
     };
 }

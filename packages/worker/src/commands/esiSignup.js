@@ -9,19 +9,12 @@ const STATE_TTL_SEC = 600; // 10분
 const NONCE_TTL_SEC = 660; // state보다 약간 길게
 
 export default {
-    name: "esi-signup",
+    name: "가입",
     discord: {
-        name: "esi-signup",
-        description: "EVE ESI 가입 링크 발급 (OAuth 후 Discord에서 승인 필요)",
+        name: "가입",
+        description: "EVE ESI 가입 링크 발급 (OAuth 로그인 후 자동 연동)",
         type: 1,
-        options: [
-            {
-                type: 3,
-                name: "nick",
-                description: "디스코드 표시명(생략 시 서버 닉네임/유저명 사용)",
-                required: false,
-            },
-        ],
+        options: [],
     },
 
     /**
@@ -43,10 +36,7 @@ export default {
         const discordUserId = String(meta.discordUserId ?? "").trim();
         const guildId = String(meta.guildId ?? "").trim();
         const channelId = String(meta.channelId ?? "").trim();
-        const discordNick =
-            String(meta.discordNick ?? "").trim() ||
-            String(envelope?.args ?? "").trim() ||
-            "Unknown";
+        const discordNick = String(meta.discordNick ?? "").trim() || "Unknown";
 
         if (!discordUserId) {
             return { ok: false, data: { error: "discordUserId가 없습니다." } };
@@ -148,7 +138,7 @@ export default {
                 embed: true,
                 title: "EVE ESI 가입 링크",
                 description:
-                    "**비공개 메시지**로 링크를 보냈습니다. 해당 링크로 EVE 로그인 후, 돌아오면 Discord에서 **승인** 버튼을 눌러 주세요.",
+                    "**비공개 메시지**로 링크를 보냈습니다. 해당 링크로 EVE 로그인 후 돌아오면 자동으로 연동됩니다.",
                 fields: [],
                 footer: `요청자: ${discordNick}`,
                 /** Master가 followUp(flags:64)로만 전송. 공개 메시지에 포함하지 않음. */

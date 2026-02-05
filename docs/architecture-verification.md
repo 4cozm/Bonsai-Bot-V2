@@ -3,8 +3,8 @@
 ## 1. Master – 라우팅 + interaction 수명만
 
 - **interactionRouter.js**: `deferReply` → `publishProdCommand` / `publishDevCommand` → `pendingMap.set(res.envelopeId, { interaction })` → 첫 응답은 `editReply`로만 처리.
-- **커맨드 해석/실행**: 없음. 슬래시는 `commandName` → `cmd`, 버튼은 `custom_id` prefix `esi-approve:` → `cmd: "esi-approve"`, `args: { registrationId }`로만 매핑. “어떤 cmd로 갈지”만 정하고, 유효성/실행은 Worker에 위임.
-- **비고**: Master는 버튼 payload를 역직렬화하여 cmd/args를 그대로 전달만 하며, cmd 선택·args 기본값 부여·정책/유효성 판단 등 의미 부여는 하지 않는다(SoT는 Worker).
+- **커맨드 해석/실행**: 없음. 슬래시는 `commandName` → `cmd`로만 매핑. “어떤 cmd로 갈지”만 정하고, 유효성/실행은 Worker에 위임.
+- **비고**: Master는 옵션을 직렬화하여 cmd/args를 그대로 전달만 하며, cmd 선택·args 기본값 부여·정책/유효성 판단 등 의미 부여는 하지 않는다(SoT는 Worker).
 - **replyTo / pendingMap 예외**: `handleResult`에 “replyTo가 schedule이면…” 같은 도메인 분기 없음. `inReplyTo`로만 `pendingMap` 조회하고, 없으면 로그 후 스킵.
 
 → **지침 준수.**
@@ -17,7 +17,7 @@
    `cmd` 없음 → `execOk = false`, `execData = { error: "cmd가 비어있음" }`.  
    `commandMap`에 없음 → `execData = { error: \`unknown cmd: ${cmdName}\` }`.  
 그대로 `buildResultEnvelope({ ok: execOk, data: execData })`로 반환.
-- **esiSignup / esiApprove / dev**: 실패 시 모두 `{ ok: false, data: { error: "…" } }` 형태.
+- **esiSignup / esiComplete / dev**: 실패 시 모두 `{ ok: false, data: { error: "…" } }` 형태.
 
 → **지침 준수 (ok=false + data.error).**
 
@@ -27,7 +27,7 @@
 
 - **부팅**: `initializeOrchestrator`에서 Redis 생성 후 `startEsiCallbackServer`, (prod) `startDtScheduler`, `runRedisStreamsGlobalConsumer` 순으로 시작. cron을 cmd로 트리거하지 않음.
 - **DT 스케줄러**: `scheduleDailyAt` + `setInterval`로 in-process 폴링. 부팅 시 ESI `/status` 1회로 `baselineVersion` 캐시. `vipDedupKey` / `openDedupKey`에 Redis **SET NX EX** 날짜 단위 dedup. VIP 알림 1회, 정식 오픈 알림 1회 후 `clearInterval`. `server_version` 증가 시 VPN 문구 반영 후 `baselineVersion` 갱신. 화요일(`day === 2`)에 `alertSkillPointIfTuesday()`로 별도 웹훅.
-- **ESI 콜백**: `esiCallbackServer.js`에서 Discord 버튼 메시지는 봇 토큰으로 `POST /channels/:id/messages`만 사용. 주석대로 pendingMap과 연결하지 않음.
+- **ESI 콜백**: `esiCallbackServer.js`에서 토큰 교환·DB 반영 후 Worker에 `esi-complete` 명령을 Redis Streams로 발행. 결과는 Worker → Master 채널 브로드캐스트로 해당 채널에 전송.
 - **글로벌 consumer**: `replyTo` 없는 cmd도 result를 스트림에 남기지만, Master는 `inReplyTo`로만 pendingMap을 찾으므로 해당 결과는 “pending 없음”으로 로그만 하고 editReply 하지 않음.
 
 → **지침 준수.**

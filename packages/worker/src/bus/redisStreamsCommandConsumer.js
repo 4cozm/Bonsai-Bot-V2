@@ -185,16 +185,17 @@ export async function runRedisStreamsCommandConsumer({
                         )} ok=${execOk} handlerMs=${handlerMs.toFixed(2)} totalMs=${totalMs}`
                     );
 
-                    // result publish는 res.data 그대로
+                    const baseMeta = {
+                        tenantKey: t,
+                        cmd: envelope.cmd,
+                        issuedAt: Math.floor(Date.now() / 1000),
+                    };
+                    const resMeta = res?.meta && typeof res.meta === "object" ? res.meta : {};
                     const resultEnv = buildResultEnvelope({
                         inReplyTo: String(envelope.id),
                         ok: execOk,
                         data: execData,
-                        meta: {
-                            tenantKey: t,
-                            cmd: envelope.cmd,
-                            issuedAt: Math.floor(Date.now() / 1000),
-                        },
+                        meta: { ...baseMeta, ...resMeta },
                     });
 
                     await redis.xAdd(resultStreamKey, "*", { payload: JSON.stringify(resultEnv) });

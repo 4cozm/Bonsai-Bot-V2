@@ -4,9 +4,9 @@ import { logger } from "@bonsai/shared";
 const log = logger();
 
 export default {
-    name: "ping",
+    name: "핑",
     discord: {
-        name: "ping",
+        name: "핑",
         description: "워커 지연/처리시간 확인",
         type: 1,
     },
@@ -19,7 +19,7 @@ export default {
     async execute(ctx, envelope) {
         const t = String(ctx?.tenantKey ?? "");
         const envId = String(envelope?.id ?? "");
-        log.info(`[cmd:ping] 실행 tenant=${t} envelopeId=${envId}`);
+        log.info(`[cmd:핑] 실행 tenant=${t} envelopeId=${envId}`);
 
         const issuedAtMs = ctx?.metrics?.issuedAtMs ?? null;
         const receivedAtMs = ctx?.metrics?.workerReceivedAtMs ?? Date.now();
@@ -61,7 +61,7 @@ export default {
             ok: true,
             data: {
                 embed: true,
-                title: "퐁 (ping)",
+                title: "퐁 (핑)",
                 description: summaryLines.join("\n"),
                 // master가 fields로 만들기 쉬운 구조도 같이 준다
                 fields: [
