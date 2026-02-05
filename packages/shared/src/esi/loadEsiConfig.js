@@ -9,15 +9,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../utils/logger.js";
+import { parseEveEsiScope } from "./parseEveEsiScope.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = logger();
-
-const ESI_KEYS = Object.freeze([
-    "EVE_ESI_CLIENT_ID",
-    "EVE_ESI_CLIENT_SECRET",
-    "EVE_ESI_REDIRECT_URI",
-]);
 const STATE_SECRET_KEY = "ESI_STATE_SECRET";
 
 function isDevEnvironment() {
@@ -27,8 +22,9 @@ function isDevEnvironment() {
     return n === "development" || isDev || runEnv === "dev";
 }
 
+const ESI_CALLBACK_PORT = 3000;
+
 function printEsiGuide() {
-    const port = process.env.ESI_CALLBACK_PORT || "3001";
     const lines = [
         "",
         "========== EVE ESI 앱 발급 가이드 (개발용) ==========",
@@ -36,7 +32,7 @@ function printEsiGuide() {
         "2. Application Type: 'Third Party Application' 또는 'CREST Application'",
         "3. Callback URL: 아래 REDIRECT_URI와 반드시 동일하게 입력",
         "   (한 글자라도 다르면 EVE SSO가 거부합니다.)",
-        `   예: http://localhost:${port}/auth/eve/callback`,
+        `   예: http://localhost:${ESI_CALLBACK_PORT}/auth/eve/callback`,
         "4. Scope: 최소 esi-character.read_character.v1 (필요 시 추가)",
         "5. 생성 후 Client ID / Secret Key를 복사해 .env에 붙여넣기",
         "   - EVE_ESI_CLIENT_ID= (발급된 Client ID)",
@@ -117,7 +113,7 @@ export function loadEsiConfig() {
     const clientSecret = String(process.env.EVE_ESI_CLIENT_SECRET ?? "").trim();
     const redirectUri = String(process.env.EVE_ESI_REDIRECT_URI ?? "").trim();
     const stateSecret = String(process.env.ESI_STATE_SECRET ?? "").trim();
-    const scope = String(process.env.EVE_ESI_SCOPE ?? "esi-character.read_character.v1").trim();
+    const scope = parseEveEsiScope(process.env.EVE_ESI_SCOPE, { required: !isDev });
 
     const missing = [];
     if (!clientId || isPlaceholder(clientId)) missing.push("EVE_ESI_CLIENT_ID");
@@ -144,8 +140,7 @@ export function loadEsiConfig() {
 
     // Dev: 친절한 실패 + .env 부트스트랩
     printEsiGuide();
-    const port = process.env.ESI_CALLBACK_PORT || "3001";
-    const suggestedRedirect = `http://localhost:${port}/auth/eve/callback`;
+    const suggestedRedirect = `http://localhost:${ESI_CALLBACK_PORT}/auth/eve/callback`;
     const toAdd = {};
     if (!clientId) toAdd.EVE_ESI_CLIENT_ID = "<EVE 개발자 포털에서 발급한 Client ID 입력>";
     if (!clientSecret)

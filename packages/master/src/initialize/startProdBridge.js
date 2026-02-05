@@ -171,6 +171,12 @@ async function handleResult({ resultEnv, pendingMap, source }) {
     const render = buildDiscordReplyPayload(data);
     await interaction.editReply(render);
 
+    const ephemeralContent =
+        data != null && typeof data.ephemeral === "string" ? data.ephemeral.trim() : "";
+    if (ephemeralContent) {
+        await interaction.followUp({ content: ephemeralContent, flags: 64 });
+    }
+
     log.info(`[prodBridge] Discord 응답 완료 source=${source} inReplyTo=${inReplyTo} ok=${ok}`);
     return true;
 }
