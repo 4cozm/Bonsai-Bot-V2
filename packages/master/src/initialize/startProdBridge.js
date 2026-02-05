@@ -263,8 +263,9 @@ function safeStringify(v) {
 }
 
 /**
- * SQS Body는 "원시 result envelope JSON"으로 온다.
- * 예: {"type":"result","inReplyTo":"...","ok":true,"data":...}
+ * SQS Body 파싱:
+ * - Raw 메시지: 직접 result envelope JSON → {"type":"result","inReplyTo":"...","data":...}
+ * - SNS 래퍼: Body가 SNS Notification이면 Message 필드 한 번 더 파싱해 result envelope 사용
  *
  * @param {string} body
  * @returns {{ok:true, resultEnv:any} | {ok:false, reason:string}}
@@ -280,7 +281,16 @@ function parseSqsBodyToResultEnvelope(body) {
         return { ok: false, reason: "body not json" };
     }
 
-    // 최소 계약만 확인 (type/result, inReplyTo)
+    // SNS가 래핑한 경우: Message 안에 result envelope 문자열이 있음
+    const snsMessage = typeof j?.Message === "string" ? j.Message.trim() : "";
+    if (String(j?.Type ?? "").trim() === "Notification" && snsMessage) {
+        try {
+            j = JSON.parse(snsMessage);
+        } catch {
+            return { ok: false, reason: "sns Message not json" };
+        }
+    }
+
     const type = String(j?.type ?? "").trim();
     const inReplyTo = String(j?.inReplyTo ?? "").trim();
 

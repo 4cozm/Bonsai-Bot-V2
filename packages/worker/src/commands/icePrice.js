@@ -1,6 +1,6 @@
-// packages/worker/src/commands/mineralPrice.js
+// packages/worker/src/commands/icePrice.js
 import { logger } from "@bonsai/shared";
-import { HUBS, MINERAL_ITEMS } from "../market/constants.js";
+import { HUBS, ICE_ITEMS } from "../market/constants.js";
 import { getMarketPrice, getRegionHistory } from "../market/esiMarketCache.js";
 
 const log = logger();
@@ -18,10 +18,10 @@ function fmtPct(p) {
 }
 
 export default {
-    name: "광물시세",
+    name: "얼음시세",
     discord: {
-        name: "광물시세",
-        description: "기본 오어 12종 시세 (Jita/Amarr)",
+        name: "얼음시세",
+        description: "아이스 산출물 7종 시세 (Jita/Amarr)",
         type: 1,
         options: [],
     },
@@ -40,10 +40,10 @@ export default {
             return { ok: false, data: { error: "시스템 설정 오류" } };
         }
 
-        const itemCount = MINERAL_ITEMS.length;
-        log.info("[cmd:광물시세] 시세 조회 시작", { tenant: tenantKey, items: itemCount });
+        const itemCount = ICE_ITEMS.length;
+        log.info("[cmd:얼음시세] 시세 조회 시작", { tenant: tenantKey, items: itemCount });
 
-        const rowPromises = MINERAL_ITEMS.map(async (item) => {
+        const rowPromises = ICE_ITEMS.map(async (item) => {
             try {
                 const [jita, amarr, histJita, histAmarr] = await Promise.all([
                     getMarketPrice(redis, { tenantKey, hub: "jita", typeId: item.typeId }),
@@ -86,7 +86,7 @@ export default {
                     hasStale: jita.stale || amarr.stale,
                 };
             } catch (err) {
-                log.warn(`[cmd:광물시세] typeId=${item.typeId} err=${err?.message}`);
+                log.warn(`[cmd:얼음시세] typeId=${item.typeId} err=${err?.message}`);
                 return {
                     name: item.name,
                     typeId: item.typeId,
@@ -115,7 +115,7 @@ export default {
         const hasAnyPrice = rows.some((r) => r.jitaSell != null || r.amarrSell != null);
         const noData = rows.length === 0 || errorCount === rows.length || !hasAnyPrice;
 
-        log.info("[cmd:광물시세] 시세 수집 완료", {
+        log.info("[cmd:얼음시세] 시세 수집 완료", {
             tenant: tenantKey,
             rows: rows.length,
             errors: errorCount,
@@ -128,7 +128,7 @@ export default {
                 errorCount === rows.length && rows.length > 0
                     ? `시세 조회 실패 (모든 품목 오류, ${errorCount}건). ESI/네트워크 확인 후 재시도해 주세요.`
                     : "시세 데이터를 가져오지 못했습니다.";
-            log.warn("[cmd:광물시세] 반환: 오류 (데이터 없음)", {
+            log.warn("[cmd:얼음시세] 반환: 오류 (데이터 없음)", {
                 tenant: tenantKey,
                 errorCount,
                 rows: rows.length,
@@ -143,8 +143,8 @@ export default {
 
         const ITEMS_PER_PAGE = 10;
         const footer = hasStale ? "일부 데이터는 캐시(stale)입니다." : "ESI 기준, 1시간 캐시";
-        const baseTitle = "광물 시세 (기본 오어 12종)";
-        const baseDescription = "Jita/Amarr 스테이션 S/B · Δ(Amarr−Jita)% · ISK/m³";
+        const baseTitle = "얼음 시세 (아이스 산출물 7종)";
+        const baseDescription = "Jita/Amarr 스테이션 S/B · Δ(Amarr−Jita)% · ISK/m³ (내림차순)";
 
         const embeds = [];
         for (let p = 0; p < rows.length; p += ITEMS_PER_PAGE) {
@@ -180,7 +180,7 @@ export default {
             });
         }
 
-        log.info("[cmd:광물시세] 응답 반환 완료", {
+        log.info("[cmd:얼음시세] 응답 반환 완료", {
             tenant: tenantKey,
             embedPages: embeds.length,
             stale: hasStale,

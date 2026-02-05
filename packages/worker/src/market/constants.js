@@ -1,5 +1,6 @@
 /**
- * 마켓 시세 조회용 상수: 허브, Fullerite 9종, 웜홀 관련 광물/얼음 산출물.
+ * 마켓 시세 조회용 상수: 허브, Fullerite 9종, 기본 오어 12종, 아이스 산출물 7종.
+ * 표시명은 모두 코드 고정 (한글 로컬/캐시 미사용).
  */
 
 /** Jita / Amarr region_id, station_id */
@@ -8,38 +9,42 @@ export const HUBS = Object.freeze({
     amarr: { regionId: 10000043, stationId: 60008494, label: "Amarr" },
 });
 
-/** Fullerite 9종 (type_id, 이름, m³ 단위 부피) */
+/** Fullerite 9종 (웜홀 가스). typeId 30370~30378, 표시명·volume 고정 */
 export const FULLERITE_ITEMS = Object.freeze([
-    { typeId: 30375, name: "Fullerite C28", volume: 10 },
-    { typeId: 30376, name: "Fullerite C32", volume: 10 },
-    { typeId: 30377, name: "Fullerite C50", volume: 10 },
-    { typeId: 30378, name: "Fullerite C60", volume: 10 },
-    { typeId: 30379, name: "Fullerite C70", volume: 10 },
-    { typeId: 30380, name: "Fullerite C72", volume: 10 },
-    { typeId: 30381, name: "Fullerite C84", volume: 10 },
-    { typeId: 30382, name: "Fullerite C320", volume: 10 },
-    { typeId: 30383, name: "Fullerite C540", volume: 10 },
+    { typeId: 30370, name: "Fullerite-C50", volume: 1 },
+    { typeId: 30371, name: "Fullerite-C60", volume: 1 },
+    { typeId: 30372, name: "Fullerite-C70", volume: 1 },
+    { typeId: 30373, name: "Fullerite-C72", volume: 1 },
+    { typeId: 30374, name: "Fullerite-C84", volume: 2 },
+    { typeId: 30375, name: "Fullerite-C28", volume: 2 },
+    { typeId: 30376, name: "Fullerite-C32", volume: 5 },
+    { typeId: 30377, name: "Fullerite-C320", volume: 5 },
+    { typeId: 30378, name: "Fullerite-C540", volume: 10 },
 ]);
 
-/** 웜홀 채굴/반응/제작에서 자주 쓰는 광물·얼음 산출물 (type_id, 이름, m³) */
+/** 기본 오어 12종 (변종 오어 제외). 표시명·volume 고정 */
 export const MINERAL_ITEMS = Object.freeze([
     { typeId: 22, name: "Arkonor", volume: 16 },
-    { typeId: 1223, name: "Bistot", volume: 16 },
-    { typeId: 1229, name: "Crokite", volume: 16 },
-    { typeId: 1225, name: "Dark Ochre", volume: 8 },
-    { typeId: 17865, name: "Gneiss", volume: 5 },
     { typeId: 19, name: "Spodumain", volume: 16 },
-    { typeId: 11396, name: "Mercoxit", volume: 40 },
     { typeId: 18, name: "Plagioclase", volume: 0.35 },
-    { typeId: 1227, name: "Omber", volume: 0.6 },
+    { typeId: 1223, name: "Bistot", volume: 16 },
+    { typeId: 1225, name: "Crokite", volume: 8 },
     { typeId: 1226, name: "Jaspet", volume: 2 },
+    { typeId: 1227, name: "Omber", volume: 0.6 },
     { typeId: 1228, name: "Scordite", volume: 0.15 },
+    { typeId: 1229, name: "Gneiss", volume: 16 },
     { typeId: 1230, name: "Veldspar", volume: 0.1 },
+    { typeId: 1232, name: "Dark Ochre", volume: 8 },
+    { typeId: 11396, name: "Mercoxit", volume: 40 },
+]);
+
+/** 아이스 산출물 7종. 표시명·volume 고정 */
+export const ICE_ITEMS = Object.freeze([
     { typeId: 16272, name: "Heavy Water", volume: 1 },
+    { typeId: 16273, name: "Liquid Ozone", volume: 1 },
     { typeId: 16274, name: "Helium Isotopes", volume: 1 },
-    { typeId: 16273, name: "Hydrogen Isotopes", volume: 1 },
-    { typeId: 16275, name: "Liquid Ozone", volume: 1 },
-    { typeId: 16276, name: "Nitrogen Isotopes", volume: 1 },
-    { typeId: 16277, name: "Oxygen Isotopes", volume: 1 },
-    { typeId: 16278, name: "Strontium Clathrates", volume: 1 },
+    { typeId: 16275, name: "Strontium Clathrates", volume: 1 },
+    { typeId: 17889, name: "Hydrogen Isotopes", volume: 1 },
+    { typeId: 17888, name: "Nitrogen Isotopes", volume: 1 },
+    { typeId: 17887, name: "Oxygen Isotopes", volume: 1 },
 ]);
