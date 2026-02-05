@@ -15,33 +15,6 @@ function getTenantDbUrlTemplate() {
 }
 const TENANT_DB_NAME_PREFIX = String(process.env.TENANT_DB_NAME_PREFIX ?? "bonsai_").trim();
 
-// #region agent log
-queueMicrotask(() => {
-    const hasT = Boolean(process.env.TENANT_DB_URL_TEMPLATE?.trim());
-    const hasD = Boolean(process.env.DATABASE_URL?.trim());
-    fetch("http://127.0.0.1:7242/ingest/7070e61a-5c08-41bb-b8db-31b1f8c2675e", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            location: "getPrisma.js:moduleLoad",
-            message: "getPrisma module load: env at load time",
-            data: {
-                runMode: process.env.RUN_MODE ?? "(undefined)",
-                tenant: process.env.TENANT ?? "(undefined)",
-                hasTenantDbUrlTemplate: hasT,
-                hasDatabaseUrl: hasD,
-                templateNowLength: getTenantDbUrlTemplate().length,
-                templateNowEmpty: getTenantDbUrlTemplate() === "",
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "post-fix",
-            hypothesisId: "A",
-        }),
-    }).catch(() => {});
-});
-// #endregion
-
 export function sanitizeTenantKey(key) {
     return String(key ?? "").replace(/[^a-zA-Z0-9_-]/g, "");
 }
@@ -53,26 +26,6 @@ export function buildTenantDbUrl(tenantKey) {
     const safe = sanitizeTenantKey(tenantKey);
     if (!safe) throw new Error("tenantKey가 비어있거나 유효하지 않습니다.");
     const template = getTenantDbUrlTemplate();
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/7070e61a-5c08-41bb-b8db-31b1f8c2675e", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            location: "getPrisma.js:buildTenantDbUrl",
-            message: "buildTenantDbUrl called",
-            data: {
-                templateEmpty: template === "",
-                templateLength: template.length,
-                processEnvHasTemplate: Boolean(process.env.TENANT_DB_URL_TEMPLATE?.trim()),
-                processEnvHasDatabaseUrl: Boolean(process.env.DATABASE_URL?.trim()),
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "post-fix",
-            hypothesisId: "E",
-        }),
-    }).catch(() => {});
-    // #endregion
     if (template && template.includes("%s")) {
         return template.replace("%s", safe);
     }

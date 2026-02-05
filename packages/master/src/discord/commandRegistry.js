@@ -47,8 +47,8 @@ function pickComparableCommandFields(cmd) {
 }
 
 async function discordApi(method, path, body) {
-    const token = process.env.DISCORD_BOT_TOKEN;
-    if (!token) throw new Error("DISCORD_BOT_TOKEN이 없다");
+    const token = process.env.DISCORD_TOKEN;
+    if (!token) throw new Error("DISCORD_TOKEN이 없다");
 
     const url = `https://discord.com/api/v10${path}`;
     const res = await fetch(url, {

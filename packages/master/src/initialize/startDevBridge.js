@@ -59,7 +59,6 @@ export async function startDevBridge({ redis: redisFromCaller, signal } = {}) {
                 group: "bonsai-devmaster",
                 consumer: `devmaster-${process.pid}`,
                 onResult: async (resultEnv) => {
-                    // ✅ prod master가 result만 받도록 attribute로 type 지정
                     await publishJson(resultEnv, { type: "result" });
                     log.info(
                         `[devBridge] SNS(result) 발행 inReplyTo=${resultEnv.inReplyTo} ok=${resultEnv.ok}`

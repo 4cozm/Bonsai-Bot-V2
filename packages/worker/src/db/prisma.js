@@ -14,7 +14,18 @@ const MIGRATE_LOCK_TTL_SEC = Number(process.env.TENANT_MIGRATE_LOCK_TTL_SEC ?? "
 const MIGRATE_LOCK_KEY_PREFIX = "bonsai:migrate:lock:";
 
 /**
- * MYSQL_ADMIN_URL로 CREATE DATABASE IF NOT EXISTS 실행.
+ * DATABASE_URL에서 앱 사용자명 추출 (mysql://user:password@host/...).
+ * @returns {string} 빈 문자열이면 추출 실패
+ */
+function getAppDbUser() {
+    const url = String(process.env.DATABASE_URL ?? "").trim();
+    const m = url.match(/\/\/([^:@]+)(?::[^@]*)?@/);
+    return m ? String(m[1]).trim() : "";
+}
+
+/**
+ * MYSQL_ADMIN_URL로 CREATE DATABASE IF NOT EXISTS 실행 후,
+ * DATABASE_URL의 앱 사용자에게 해당 DB 권한 부여(GRANT). 권한 삭제/신규 테넌트 시에도 접근 가능.
  * @param {string} tenantKey
  * @param {{ log: { info: Function, warn: Function, error: Function } }} opts
  */
@@ -25,13 +36,27 @@ async function createTenantDbIfNotExists(tenantKey, opts) {
         return;
     }
     const dbName = getTenantDbName(tenantKey);
+    const escapedDb = dbName.replace(/`/g, "``");
     const mysql2 = await import("mysql2/promise");
     const conn = await mysql2.createConnection(adminUrl);
     try {
         await conn.query(
-            `CREATE DATABASE IF NOT EXISTS \`${dbName.replace(/`/g, "``")}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`
+            `CREATE DATABASE IF NOT EXISTS \`${escapedDb}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`
         );
         opts.log.info("[db] CREATE DATABASE 완료", { dbName });
+
+        const appUser = getAppDbUser();
+        if (appUser) {
+            const safeUser = String(appUser).replace(/'/g, "''");
+            await conn.query(`GRANT ALL PRIVILEGES ON \`${escapedDb}\`.* TO '${safeUser}'@'%'`);
+            await conn
+                .query(`GRANT ALL PRIVILEGES ON \`${escapedDb}\`.* TO '${safeUser}'@'localhost'`)
+                .catch(() => {}); // localhost 계정 없으면 무시
+            await conn.query("FLUSH PRIVILEGES");
+            opts.log.info("[db] GRANT 완료", { dbName, user: appUser });
+        } else {
+            opts.log.warn("[db] DATABASE_URL에서 사용자 추출 실패. GRANT 생략.", { dbName });
+        }
     } finally {
         await conn.end();
     }

@@ -157,6 +157,7 @@ export default {
             meta: {
                 broadcastToChannel: true,
                 channelId,
+                guildId: String(meta.guildId ?? "").trim(),
             },
         };
     },

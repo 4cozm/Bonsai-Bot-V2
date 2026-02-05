@@ -86,7 +86,6 @@ function sha256Of(obj) {
 async function discordApi(method, path, body) {
     const token = process.env.DISCORD_TOKEN;
     if (!token) {
-        // 예상 가능한 설정 오류
         log.error("[commands] DISCORD_TOKEN이 없음");
         throw new Error("DISCORD_TOKEN이 없음");
     }
