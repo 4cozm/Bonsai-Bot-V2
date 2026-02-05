@@ -40,10 +40,7 @@ export default {
             return { ok: false, data: { error: "시스템 설정 오류" } };
         }
 
-        const rows = [];
-        let hasStale = false;
-
-        for (const item of FULLERITE_ITEMS) {
+        const rowPromises = FULLERITE_ITEMS.map(async (item) => {
             try {
                 const [jita, amarr, histJita, histAmarr] = await Promise.all([
                     getMarketPrice(redis, { tenantKey, hub: "jita", typeId: item.typeId }),
@@ -59,8 +56,6 @@ export default {
                         typeId: item.typeId,
                     }).catch(() => ({ regionAvg1d: null, regionAvg7d: null })),
                 ]);
-                if (jita.stale || amarr.stale) hasStale = true;
-
                 const jitaSell = jita.sellMin;
                 const amarrSell = amarr.sellMin;
                 const delta = jitaSell != null && amarrSell != null ? amarrSell - jitaSell : null;
@@ -70,8 +65,7 @@ export default {
                         : null;
                 const iskPerM3 =
                     jitaSell != null && item.volume > 0 ? jitaSell / item.volume : null;
-
-                rows.push({
+                return {
                     name: item.name,
                     typeId: item.typeId,
                     volume: item.volume,
@@ -86,10 +80,11 @@ export default {
                     iskPerM3,
                     regionAvg1dJita: histJita?.regionAvg1d ?? null,
                     regionAvg1dAmarr: histAmarr?.regionAvg1d ?? null,
-                });
+                    hasStale: jita.stale || amarr.stale,
+                };
             } catch (err) {
                 log.warn(`[cmd:가스시세] typeId=${item.typeId} err=${err?.message}`);
-                rows.push({
+                return {
                     name: item.name,
                     typeId: item.typeId,
                     volume: item.volume,
@@ -105,9 +100,13 @@ export default {
                     regionAvg1dJita: null,
                     regionAvg1dAmarr: null,
                     error: err?.message,
-                });
+                    hasStale: false,
+                };
             }
-        }
+        });
+        const rows = await Promise.all(rowPromises);
+        const hasStale = rows.some((r) => r.hasStale);
+        for (const r of rows) delete r.hasStale;
 
         rows.sort((a, b) => (b.iskPerM3 ?? 0) - (a.iskPerM3 ?? 0));
 

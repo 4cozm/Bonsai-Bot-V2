@@ -219,22 +219,21 @@ async function fetchStationOrders(regionId, stationId, typeId) {
         (buyHitPage == null || buyPage <= buyHitPage + EXTRA_PAGES_AFTER_HIT);
 
     while (shouldFetchSell() || shouldFetchBuy()) {
+        const sellUrl =
+            shouldFetchSell() &&
+            `${ESI_BASE}/markets/${regionId}/orders/?order_type=sell&type_id=${typeId}&page=${sellPage}`;
+        const buyUrl =
+            shouldFetchBuy() &&
+            `${ESI_BASE}/markets/${regionId}/orders/?order_type=buy&type_id=${typeId}&page=${buyPage}`;
         const [sellRes, buyRes] = await Promise.all([
-            shouldFetchSell()
-                ? fetch(
-                      `${ESI_BASE}/markets/${regionId}/orders/?order_type=sell&type_id=${typeId}&page=${sellPage}`
-                  )
-                : null,
-            shouldFetchBuy()
-                ? fetch(
-                      `${ESI_BASE}/markets/${regionId}/orders/?order_type=buy&type_id=${typeId}&page=${buyPage}`
-                  )
-                : null,
+            sellUrl ? fetch(sellUrl) : null,
+            buyUrl ? fetch(buyUrl) : null,
         ]);
 
         if (sellRes) {
             if (!sellRes.ok) throw new Error(`ESI 마켓(sell) 실패: ${sellRes.status}`);
             const sellOrders = await sellRes.json();
+            const sellXPages = parseInt(sellRes.headers.get("x-pages") || "1", 10);
             for (const o of sellOrders) {
                 if (o.location_id === stationId && typeof o.price === "number") {
                     if (sellMin == null || o.price < sellMin) sellMin = o.price;
@@ -242,6 +241,7 @@ async function fetchStationOrders(regionId, stationId, typeId) {
                 }
             }
             sellPage++;
+            if (sellPage > sellXPages) sellDone = true;
             if (sellHitPage != null && sellPage > sellHitPage + EXTRA_PAGES_AFTER_HIT)
                 sellDone = true;
             if (sellPage > PAGE_CAP) sellDone = true;
@@ -250,6 +250,7 @@ async function fetchStationOrders(regionId, stationId, typeId) {
         if (buyRes) {
             if (!buyRes.ok) throw new Error(`ESI 마켓(buy) 실패: ${buyRes.status}`);
             const buyOrders = await buyRes.json();
+            const buyXPages = parseInt(buyRes.headers.get("x-pages") || "1", 10);
             for (const o of buyOrders) {
                 if (o.location_id === stationId && typeof o.price === "number") {
                     if (buyMax == null || o.price > buyMax) buyMax = o.price;
@@ -257,6 +258,7 @@ async function fetchStationOrders(regionId, stationId, typeId) {
                 }
             }
             buyPage++;
+            if (buyPage > buyXPages) buyDone = true;
             if (buyHitPage != null && buyPage > buyHitPage + EXTRA_PAGES_AFTER_HIT) buyDone = true;
             if (buyPage > PAGE_CAP) buyDone = true;
         }
