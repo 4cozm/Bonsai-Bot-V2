@@ -171,10 +171,25 @@ async function handleResult({ resultEnv, pendingMap, source }) {
     const render = buildDiscordReplyPayload(data);
     await interaction.editReply(render);
 
-    const ephemeralContent =
+    const rawEphemeral =
         data != null && typeof data.ephemeral === "string" ? data.ephemeral.trim() : "";
+    const ephemeralContent =
+        rawEphemeral.length > 2000 ? `${rawEphemeral.slice(0, 1997)}…` : rawEphemeral;
     if (ephemeralContent) {
-        await interaction.followUp({ content: ephemeralContent, flags: 64 });
+        try {
+            await interaction.followUp({ content: ephemeralContent, flags: 64 });
+        } catch (err) {
+            const errMsg = err?.message ?? String(err);
+            log.warn(`[prodBridge] 비공개 메시지 전송 실패 inReplyTo=${inReplyTo} err=${errMsg}`);
+            try {
+                await interaction.followUp({
+                    content: `⚠️ 비공개 메시지(링크) 전송에 실패했습니다. 관리자에게 문의해 주세요. (${errMsg.slice(0, 200)})`,
+                    flags: 64,
+                });
+            } catch (e) {
+                log.error(`[prodBridge] 실패 안내 비공개 전송도 실패: ${e?.message ?? String(e)}`);
+            }
+        }
     }
 
     log.info(`[prodBridge] Discord 응답 완료 source=${source} inReplyTo=${inReplyTo} ok=${ok}`);
