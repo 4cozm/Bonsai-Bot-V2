@@ -29,6 +29,21 @@ describe("master/buildDiscordReplyPayload", () => {
         );
     });
 
+    test("embed=true 단일 임베드에 color·timestamp:false 반영", () => {
+        const p = buildDiscordReplyPayload({
+            embed: true,
+            title: "퐁 (핑)",
+            description: "지연 요약",
+            fields: [{ name: "Handler", value: "12ms", inline: true }],
+            footer: "tenant=dev",
+            color: 0x57f287,
+            timestamp: false,
+        });
+        expect(p.embeds).toHaveLength(1);
+        expect(p.embeds[0].color).toBe(0x57f287);
+        expect(p.embeds[0]).not.toHaveProperty("timestamp");
+    });
+
     test("embed=true인데 fields 없으면 fallback fields 생성", () => {
         const p = buildDiscordReplyPayload({ embed: true, title: "x" });
         expect(p.content).toBe("");
@@ -60,5 +75,41 @@ describe("master/buildDiscordReplyPayload", () => {
         expect(p.embeds[0].footer).toEqual({ text: "공통 푸터" });
         expect(p.embeds[1].title).toBe("페이지 2");
         expect(p.embeds[1].fields).toHaveLength(1);
+    });
+
+    test("embeds[].color와 timestamp:false가 반영됨 (시세 명령 스타일)", () => {
+        const p = buildDiscordReplyPayload({
+            embed: true,
+            footer: "ESI 기준 · 60초 캐시",
+            embeds: [
+                {
+                    title: "웜홀 가스 · Amarr",
+                    description: "갱신 시각 등",
+                    fields: [{ name: "시세", value: "표 내용", inline: false }],
+                    footer: "ESI 기준 · 60초 캐시",
+                    color: 0x3498db,
+                    timestamp: false,
+                },
+            ],
+        });
+        expect(p.content).toBe("");
+        expect(p.embeds).toHaveLength(1);
+        expect(p.embeds[0].title).toBe("웜홀 가스 · Amarr");
+        expect(p.embeds[0].color).toBe(0x3498db);
+        expect(p.embeds[0]).not.toHaveProperty("timestamp");
+    });
+
+    test("embeds[].color가 유효 범위 밖이면 포함되지 않음", () => {
+        const p = buildDiscordReplyPayload({
+            embed: true,
+            embeds: [
+                { title: "T", color: 0x123456 },
+                { title: "U", color: "0x3498db" },
+                { title: "V", color: 0x1000000 },
+            ],
+        });
+        expect(p.embeds[0].color).toBe(0x123456);
+        expect(p.embeds[1].color).toBeUndefined();
+        expect(p.embeds[2].color).toBeUndefined();
     });
 });

@@ -1,5 +1,5 @@
 /**
- * ESI 마켓 오더 조회 + Redis 캐시(TTL 3600) + per-key 락.
+ * ESI 마켓 오더 조회 + Redis 캐시(TTL 60초) + per-key 락.
  * 리전 히스토리(평균가) 캐시 TTL 6h.
  * 캐시 키: mkt:{tenantKey}:esi:v1:{hub}:{typeId}
  * 히스토리: mkt:{tenantKey}:esi:history:v1:{regionId}:{typeId}
@@ -8,7 +8,7 @@
 import { HUBS } from "./constants.js";
 
 const ESI_BASE = "https://esi.evetech.net/latest";
-const CACHE_TTL_SEC = 3600;
+const CACHE_TTL_SEC = 60;
 const HISTORY_CACHE_TTL_SEC = 6 * 3600; // 6h
 const LOCK_TTL_SEC = 30;
 const LOCK_BACKOFF_MS = 500;
@@ -43,13 +43,16 @@ function runWithLimit(fn) {
 
 /**
  * @param {import("redis").RedisClientType} redis
- * @param {{ tenantKey: string, hub: "jita"|"amarr", typeId: number }} opts
+ * @param {{ tenantKey: string, hub: string, typeId: number }} opts - hub: jita|amarr|dodixie|rens|hek
  * @returns {Promise<{ fetchedAt: number, sellMin: number|null, buyMax: number|null, regionId: number, stationId: number, typeId: number, stale?: boolean, capped?: boolean }>}
  */
 export async function getMarketPrice(redis, { tenantKey, hub, typeId }) {
     const tenant = String(tenantKey ?? "").trim();
-    const hubKey = hub === "amarr" ? "amarr" : "jita";
+    const hubKey = String(hub ?? "").toLowerCase();
     const hubInfo = HUBS[hubKey];
+    if (!hubInfo) {
+        throw new Error("지원하지 않는 상권입니다.");
+    }
     const cacheKey = `mkt:${tenant}:esi:v1:${hubKey}:${typeId}`;
     const lockKey = `mkt:${tenant}:esi:lock:${hubKey}:${typeId}`;
 
