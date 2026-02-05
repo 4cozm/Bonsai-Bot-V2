@@ -3,11 +3,48 @@
  * 표시명은 모두 코드 고정 (한글 로컬/캐시 미사용).
  */
 
-/** Jita / Amarr region_id, station_id */
+/** 5대 허브: region_id, station_id, label, stationName(임베드 설명용) */
 export const HUBS = Object.freeze({
-    jita: { regionId: 10000002, stationId: 60003760, label: "Jita" },
-    amarr: { regionId: 10000043, stationId: 60008494, label: "Amarr" },
+    jita: {
+        regionId: 10000002,
+        stationId: 60003760,
+        label: "Jita",
+        stationName: "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+    },
+    amarr: {
+        regionId: 10000043,
+        stationId: 60008494,
+        label: "Amarr",
+        stationName: "Amarr VIII (Oris) - Emperor Family Academy",
+    },
+    dodixie: {
+        regionId: 10000032,
+        stationId: 60011866,
+        label: "Dodixie",
+        stationName: "Dodixie IX - Moon 20 - Federation Navy Assembly Plant",
+    },
+    rens: {
+        regionId: 10000030,
+        stationId: 60004588,
+        label: "Rens",
+        stationName: "Rens VI - Moon 8 - Brutor Tribe Treasury",
+    },
+    hek: {
+        regionId: 10000042,
+        stationId: 60005686,
+        label: "Hek",
+        stationName: "Hek VIII - Moon 12 - Boundless Creation Factory",
+    },
 });
+
+/** Discord 슬래시 명령 hub 옵션 choices */
+export const HUB_CHOICES = Object.freeze([
+    { name: "지타", value: "jita" },
+    { name: "아마르", value: "amarr" },
+    { name: "헤크", value: "hek" },
+    { name: "도딕시", value: "dodixie" },
+    { name: "렌스", value: "rens" },
+]);
 
 /** Fullerite 9종 (웜홀 가스). typeId 30370~30378, 표시명·volume 고정 */
 export const FULLERITE_ITEMS = Object.freeze([

@@ -141,6 +141,7 @@ export default {
                     "**비공개 메시지**로 링크를 보냈습니다. 해당 링크로 EVE 로그인 후 돌아오면 자동으로 연동됩니다.",
                 fields: [],
                 footer: `요청자: ${discordNick}`,
+                color: 0x9b59b6,
                 /** Master가 followUp(flags:64)로만 전송. 공개 메시지에 포함하지 않음. */
                 ephemeral: `EVE 로그인 링크 (본인만 보임): [클릭](${authorizeUrl})`,
             },

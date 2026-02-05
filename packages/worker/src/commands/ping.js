@@ -74,6 +74,7 @@ export default {
                     { name: "Handler", value: formatMsK(handlerMs), inline: true },
                 ],
                 footer: `tenant=${t} envelopeId=${envId}`,
+                color: 0x57f287,
                 // 디버깅/추후 매트릭용 원시값은 그대로 보관
                 metrics,
                 raw: rawLines.join(" | "),

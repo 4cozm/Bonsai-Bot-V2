@@ -153,6 +153,7 @@ export default {
                 description,
                 fields,
                 footer: `characterId: ${reg.characterId}`,
+                color: 0x9b59b6,
             },
             meta: {
                 broadcastToChannel: true,
