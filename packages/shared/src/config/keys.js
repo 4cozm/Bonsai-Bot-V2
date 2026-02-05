@@ -53,7 +53,12 @@ export const ENV_REQUIRED = Object.freeze({
         dev: Object.freeze([
             // dev worker 전용
         ]),
-        prod: Object.freeze(["EVE_ESI_CLIENT_ID", "EVE_ESI_CLIENT_SECRET", "EVE_ESI_REDIRECT_URI"]),
+        prod: Object.freeze([
+            "EVE_ESI_CLIENT_ID",
+            "EVE_ESI_CLIENT_SECRET",
+            "EVE_ESI_REDIRECT_URI",
+            "EVE_ESI_SCOPE",
+        ]),
     }),
 
     global: Object.freeze({
@@ -74,6 +79,7 @@ export const ENV_REQUIRED = Object.freeze({
             "EVE_ESI_CLIENT_ID",
             "EVE_ESI_CLIENT_SECRET",
             "EVE_ESI_REDIRECT_URI",
+            "EVE_ESI_SCOPE",
         ]),
     }),
 });

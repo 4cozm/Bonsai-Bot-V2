@@ -34,9 +34,12 @@ export function buildDiscordReplyPayload(data) {
     const embed = {
         title,
         description,
-        fields: fields.length
-            ? fields
-            : [{ name: "data", value: safeStringify(data), inline: false }],
+        fields:
+            fields.length > 0
+                ? fields
+                : description
+                  ? []
+                  : [{ name: "data", value: safeStringify(data), inline: false }],
         footer: footerText ? { text: footerText } : undefined,
         timestamp: new Date().toISOString(),
     };

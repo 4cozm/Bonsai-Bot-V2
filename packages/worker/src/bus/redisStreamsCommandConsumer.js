@@ -212,7 +212,10 @@ export async function runRedisStreamsCommandConsumer({
                     log.info(`[worker:redis] group 재생성 완료 stream=${streamKey} group=${group}`);
                     continue;
                 } catch (e) {
-                    log.warn(`[worker:redis] group 재생성 실패: ${e?.message ?? String(e)}`);
+                    log.warn(
+                        `[worker:redis] group 재생성 실패 - 서버 종료: ${e?.message ?? String(e)}`
+                    );
+                    process.exit(1);
                 }
             }
 

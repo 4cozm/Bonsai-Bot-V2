@@ -1,5 +1,5 @@
 // packages/worker/src/commands/esiSignup.js
-import { issueNonce, logger, signState } from "@bonsai/shared";
+import { issueNonce, logger, parseEveEsiScope, signState } from "@bonsai/shared";
 import { randomUUID } from "node:crypto";
 
 const log = logger();
@@ -63,7 +63,8 @@ export default {
         const secret = String(process.env.ESI_STATE_SECRET ?? "").trim();
         const clientId = String(process.env.EVE_ESI_CLIENT_ID ?? "").trim();
         const redirectUri = String(process.env.EVE_ESI_REDIRECT_URI ?? "").trim();
-        const scope = String(process.env.EVE_ESI_SCOPE ?? "esi-character.read_character.v1").trim();
+        const isDev = String(process.env.isDev ?? "").toLowerCase() === "true";
+        const scope = parseEveEsiScope(process.env.EVE_ESI_SCOPE, { required: !isDev });
 
         if (!secret || !clientId || !redirectUri) {
             log.error(
@@ -140,23 +141,18 @@ export default {
             `[cmd:esi-signup] 링크 발급 완료 tenant=${tenantKey} discordId=${discordUserId} stateNonce=${stateNonce}`
         );
 
+        // 공개 메시지에는 링크 없음. 링크는 data.ephemeral로 Master가 followUp(flags:64) 전송.
         return {
             ok: true,
             data: {
                 embed: true,
                 title: "EVE ESI 가입 링크",
                 description:
-                    "아래 링크로 EVE 로그인 후, 돌아오면 Discord에서 **승인 버튼**을 눌러 주세요.",
-                fields: [
-                    {
-                        name: "링크",
-                        value: `[EVE 로그인 (클릭)](${authorizeUrl})`,
-                        inline: false,
-                    },
-                ],
+                    "**비공개 메시지**로 링크를 보냈습니다. 해당 링크로 EVE 로그인 후, 돌아오면 Discord에서 **승인** 버튼을 눌러 주세요.",
+                fields: [],
                 footer: `요청자: ${discordNick}`,
-                // Master가 링크만 보여주기 위해 사용(해석 금지)
-                authorizeUrl,
+                /** Master가 followUp(flags:64)로만 전송. 공개 메시지에 포함하지 않음. */
+                ephemeral: `EVE 로그인 링크 (본인만 보임): [클릭](${authorizeUrl})`,
             },
         };
     },

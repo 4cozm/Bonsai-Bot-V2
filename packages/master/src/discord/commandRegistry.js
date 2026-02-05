@@ -1,5 +1,5 @@
 import { logger } from "@bonsai/shared";
-import { getCommandDefinitions, getDiscordSchemas } from "@bonsai/worker";
+import { getDiscordSchemas } from "@bonsai/worker";
 import crypto from "node:crypto";
 
 const log = logger();
@@ -10,19 +10,6 @@ const log = logger();
  */
 export function getDiscordCommandSchemas() {
     return getDiscordSchemas();
-}
-
-/**
- * 디스코드 commandName -> commandDefinition lookup
- * (배포/도구용. 라우팅에서 쓰지 않는 게 원칙)
- * @returns {Map<string, any>}
- */
-export function getRegistryByName() {
-    const map = new Map();
-    for (const def of getCommandDefinitions()) {
-        map.set(def.discord.name, def);
-    }
-    return map;
 }
 
 function stableSortObject(value) {

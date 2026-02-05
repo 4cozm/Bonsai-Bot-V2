@@ -54,9 +54,8 @@ export async function initializeOrchestrator() {
 
     const redis = await createRedisClient();
 
-    // EVE OAuth 콜백: 테넌트 무관 전역 HTTP. prisma는 state의 tenantKey로 getPrisma(tenantKey) 사용.
-    const callbackPort = Number(process.env.ESI_CALLBACK_PORT ?? "0");
-    startEsiCallbackServer({ redis, port: callbackPort });
+    // EVE OAuth 콜백: 테넌트 무관 전역 HTTP. 포트 3000 고정. prisma는 state의 tenantKey로 getPrisma(tenantKey) 사용.
+    startEsiCallbackServer({ redis, port: 3000 });
 
     const ac = new AbortController();
     const shutdown = async (sig) => {
