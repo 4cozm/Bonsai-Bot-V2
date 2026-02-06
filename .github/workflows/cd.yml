@@ -11,6 +11,10 @@ jobs:
     deploy:
         runs-on: ubuntu-latest
         steps:
+            - name: Record deploy start time
+              id: deploy_start
+              run: echo "started_at=$(date +%s)" >> $GITHUB_OUTPUT
+
             - name: Deploy via SSH
               uses: appleboy/ssh-action@v1.0.3
               with:
@@ -35,3 +39,47 @@ jobs:
                       npx prisma migrate deploy
                       npx pm2 reload ./infra/pm2/ecosystem.config.cjs --env production
                       npx pm2 save || true
+
+            - name: Notify Discord (CD 완료)
+              if: ${{ always() }}
+              env:
+                  DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                  REPO: ${{ github.repository }}
+                  STARTED_AT: ${{ steps.deploy_start.outputs.started_at }}
+              run: |
+                  if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+                    echo "DISCORD_WEBHOOK_URL 없음 - 알림 스킵"
+                    exit 0
+                  fi
+
+                  END_TS=$(date +%s)
+                  DURATION=$((END_TS - STARTED_AT))
+
+                  if [ "${{ job.status }}" = "success" ]; then
+                    STATUS_TEXT="✅ CD 완료 (배포 성공)"
+                    COLOR=3066993
+                  else
+                    STATUS_TEXT="❌ CD 실패 (배포 오류)"
+                    COLOR=15158332
+                  fi
+
+                  payload=$(cat <<JSON
+                  {
+                    "username": "Bonsai-Bot",
+                    "embeds": [
+                      {
+                        "title": "${STATUS_TEXT}",
+                        "description": "main 브랜치 배포",
+                        "color": ${COLOR},
+                        "fields": [
+                          { "name": "소요 시간", "value": "${DURATION}초", "inline": true },
+                          { "name": "Run", "value": "${RUN_URL}", "inline": false }
+                        ]
+                      }
+                    ]
+                  }
+                  JSON
+                  )
+
+                  curl -sS -X POST -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL"
