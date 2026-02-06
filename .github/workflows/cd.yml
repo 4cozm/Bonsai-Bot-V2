@@ -22,8 +22,12 @@ jobs:
                   username: ${{ secrets.SSH_USER }}
                   key: ${{ secrets.SSH_PRIVATE_KEY }}
                   port: ${{ secrets.SSH_PORT || 22 }}
+                  command_timeout: 15m
+                  envs: CI=true,HUSKY=0
                   script: |
                       set -e
+                      export CI=true
+                      export HUSKY=0
                       DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
                       DEPLOY_BRANCH="${{ secrets.DEPLOY_BRANCH || 'main' }}"
                       if [ -z "$DEPLOY_PATH" ]; then
@@ -31,14 +35,21 @@ jobs:
                         exit 1
                       fi
                       cd "$DEPLOY_PATH"
+                      echo "[CD] git fetch..."
                       git fetch origin
                       git checkout "$DEPLOY_BRANCH"
                       git pull origin "$DEPLOY_BRANCH"
+                      echo "[CD] npm ci..."
                       npm ci
+                      echo "[CD] prisma generate..."
                       npx prisma generate
+                      echo "[CD] prisma migrate deploy..."
                       npx prisma migrate deploy
+                      echo "[CD] pm2 reload..."
                       npx pm2 reload ./infra/pm2/ecosystem.config.cjs --env production
+                      echo "[CD] pm2 save..."
                       npx pm2 save || true
+                      echo "[CD] done."
 
             - name: Notify Discord (CD 완료)
               if: ${{ always() }}

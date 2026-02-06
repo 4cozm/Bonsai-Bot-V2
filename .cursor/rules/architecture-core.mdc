@@ -1,0 +1,32 @@
+---
+description: Bonsai 아키텍처 고정 원칙 (Master/Worker/Global)
+alwaysApply: true
+---
+
+# Bonsai 아키텍처 고정 원칙 (필수)
+
+## Master (Discord) — 라우팅 + interaction 수명관리만
+
+- **명령 실행/유효성/정책 판단 금지**: 슬래시는 `commandName → cmd`로만 매핑하고 `cmd/args`를 **그대로 Worker로 전달**한다. 기본값 부여/검증/정책/도메인 분기는 Worker가 단일 진실(SoT).
+- **첫 응답/수명관리**: `deferReply → publish*Command → pendingMap.set(envelopeId, interaction)` 흐름 유지. 첫 응답은 **`editReply`만** 사용.
+- **결과 처리 규칙 단순화**: `handleResult`는 **`inReplyTo`로만** pendingMap을 조회한다. 없으면 로그 후 스킵. `replyTo` 값에 따른 도메인 예외 분기(예: schedule이면…) 금지.
+- **백그라운드 전역 작업**: interaction을 닫지 않는다. `replyTo/inReplyTo`를 만들지 않으며, 결과는 `bonsai:result`(interaction 종료 채널)로 보내지 않는다.
+
+## Tenant Worker — cmd 단일 진실(SoT) + 에러 형태 고정
+
+- **cmd 해석/실행은 Worker 책임**: Master는 의미를 부여하지 않는다.
+- **unknown/invalid cmd 반환 형태 고정**:
+  - cmd 없음: `ok=false`, `data.error="cmd가 비어있음"`
+  - commandMap에 없음: `ok=false`, `data.error="unknown cmd: <cmd>"`
+- **실패는 통일된 형태**: 모든 실패는 `{ ok:false, data:{ error:"..." } }`를 유지한다.
+
+## Global (Orchestrator/전역 프로세스) — 전역 1회/집계 + 멱등
+
+- **cron을 cmd로 트리거하지 않음**: 전역 스케줄/집계는 전역 프로세스 내부에서 실행(예: `initializeOrchestrator`가 스케줄러/consumer/서버를 직접 기동).
+- **중복 제거/멱등은 전역에서**: Master가 아니라 전역 프로세스에서 Redis **SET NX EX** 등으로 날짜 단위 dedup을 수행한다.
+- **전역 cmd 응답 경로 분리**: 전역 작업은 Discord interaction 종료 경로(`bonsai:result`)와 분리하고, 전용 sink(예: Discord Webhook) 또는 별도 스트림/채널을 사용한다.
+
+## replyTo / pendingMap — 절대 규칙
+
+- **replyTo는 선택**: interaction과 무관한 cmd는 `replyTo`가 없을 수 있다.
+- **Master는 예외 규칙을 만들지 않는다**: `replyTo` 기반 분기, schedule 예외 처리 등 금지. 오직 `inReplyTo → pendingMap`만.

@@ -72,7 +72,24 @@ export function sliceWide(s, maxWidth) {
         i += cp > 0xffff ? 2 : 1;
     }
     if (displayWidth(out) < displayWidth(str) && maxWidth >= 1) {
-        out = sliceWide(out, Math.max(0, maxWidth - 1)) + "…";
+        // maxWidth-1 폭까지만 남기고 "…"(1칸) 붙임. 재귀 대신 prefix만 다시 계산.
+        let w2 = 0;
+        out = "";
+        for (let i = 0; i < str.length; ) {
+            const cp = str.codePointAt(i);
+            const wide =
+                (cp >= 0x1100 && cp <= 0x11ff) ||
+                (cp >= 0x2e80 && cp <= 0x9fff) ||
+                (cp >= 0xac00 && cp <= 0xd7af) ||
+                (cp >= 0xf900 && cp <= 0xfaff) ||
+                (cp >= 0xff01 && cp <= 0xff60);
+            const cw = wide ? 2 : 1;
+            if (w2 + cw > maxWidth - 1) break;
+            out += String.fromCodePoint(cp);
+            w2 += cw;
+            i += cp > 0xffff ? 2 : 1;
+        }
+        out += "…";
     }
     return out;
 }
