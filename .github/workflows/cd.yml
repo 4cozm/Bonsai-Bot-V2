@@ -1,5 +1,6 @@
 # CD: main 브랜치 push 시 배포 서버에 SSH로 접속해 코드 반영 후 PM2 리로드
-# 필요한 GitHub Secrets: CD 문서 참고 또는 아래 "필요한 환경변수" 섹션
+# 필요한 GitHub Secrets: SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, DEPLOY_PATH,
+#   DATABASE_URL (prisma migrate deploy용; 서버에 .env가 없으면 필수)
 
 name: CD
 
@@ -41,6 +42,9 @@ jobs:
                       git pull origin "$DEPLOY_BRANCH"
                       echo "[CD] npm ci..."
                       npm ci
+                      if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+                        export DATABASE_URL="${{ secrets.DATABASE_URL }}"
+                      fi
                       echo "[CD] prisma generate..."
                       npx prisma generate
                       echo "[CD] prisma migrate deploy..."
