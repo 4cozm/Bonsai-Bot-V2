@@ -1,6 +1,10 @@
-import { buildResultEnvelope, logger } from "@bonsai/shared";
+import { buildResultEnvelope, logger, publishToGlobalCmdStream } from "@bonsai/shared";
 import { getCommandMap } from "../commands/index.js";
+
 const commandMap = getCommandMap();
+
+/** 전역 1회 처리 대상(시세 등). Tenant Worker는 실행하지 않고 bonsai:cmd:global로 재발행만 한다. */
+const GLOBAL_MARKET_COMMANDS = Object.freeze(["가스시세", "광물시세", "얼음시세"]);
 
 /**
  * Redis Streams consumer group이 없으면 생성한다.
@@ -108,9 +112,37 @@ export async function runRedisStreamsCommandConsumer({
                         `[worker:redis] cmd 수신 tenant=${t} entryId=${entryId} envelopeId=${envelope.id} cmd=${envelope.cmd}`
                     );
 
+                    const cmdName = String(envelope.cmd ?? "").trim();
+                    // 전역 시세: Tenant가 받으면 global 스트림으로 재발행 후 종료(무한 루프 방지: scope=global이면 Global Worker가 실행만 함)
+                    if (
+                        t !== "global" &&
+                        GLOBAL_MARKET_COMMANDS.includes(cmdName) &&
+                        envelope.scope !== "global"
+                    ) {
+                        try {
+                            await publishToGlobalCmdStream({ redis, envelope });
+                            await redis.xAck(streamKey, group, entryId);
+                        } catch (err) {
+                            log.error(
+                                `[worker:redis] global 재발행 실패 entryId=${entryId} cmd=${cmdName}`,
+                                err
+                            );
+                            const resultEnv = buildResultEnvelope({
+                                inReplyTo: String(envelope.id),
+                                ok: false,
+                                data: { error: "전역 시세 라우팅 실패" },
+                                meta: { tenantKey: t, cmd: envelope.cmd },
+                            });
+                            await redis.xAdd(resultStreamKey, "*", {
+                                payload: JSON.stringify(resultEnv),
+                            });
+                            await redis.xAck(streamKey, group, entryId);
+                        }
+                        continue;
+                    }
+
                     // --- commandMap 기반 디스패치 ---
 
-                    // ... envelope 파싱/검증 끝난 뒤
                     const receivedAtMs = Date.now();
                     const issuedAtSec = Number(envelope?.meta?.issuedAt);
                     const issuedAtMs = Number.isFinite(issuedAtSec) ? issuedAtSec * 1000 : null;
@@ -122,7 +154,6 @@ export async function runRedisStreamsCommandConsumer({
                     let execData = null;
 
                     try {
-                        const cmdName = String(envelope.cmd ?? "").trim();
                         const def = commandMap.get(cmdName);
 
                         if (!cmdName) {

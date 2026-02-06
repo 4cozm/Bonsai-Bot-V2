@@ -5,6 +5,13 @@ import dotenv from "dotenv";
 import { runRedisStreamsCommandConsumer } from "../bus/redisStreamsCommandConsumer.js";
 import { ensureTenantDbAndMigrate, getPrisma } from "../db/prisma.js";
 
+const DB_CONNECT_RETRY_ATTEMPTS = 10;
+const DB_CONNECT_RETRY_DELAY_MS = 10_000;
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const VAULT_URL_DEV = "https://bonsai-bot-dev.vault.azure.net/";
 const VAULT_URL_PROD = "https://bonsai-bot.vault.azure.net/";
 
@@ -59,8 +66,34 @@ export async function initializeWorker(opts = {}) {
     loadEsiConfig();
 
     const redis = await createRedisClient();
-    await ensureTenantDbAndMigrate({ redis, tenantKey, log });
-    const prisma = getPrisma(tenantKey);
+    // 전역 워커(시세 등)는 DB 미사용; Tenant만 DB 생성/마이그레이션
+    let prisma = null;
+    if (tenantKey !== "global") {
+        let lastError = null;
+        for (let attempt = 1; attempt <= DB_CONNECT_RETRY_ATTEMPTS; attempt++) {
+            try {
+                await ensureTenantDbAndMigrate({ redis, tenantKey, log });
+                prisma = getPrisma(tenantKey);
+                lastError = null;
+                break;
+            } catch (err) {
+                lastError = err;
+                if (attempt < DB_CONNECT_RETRY_ATTEMPTS) {
+                    log.error(
+                        `[worker:init] DB 연결 실패 (${attempt}/${DB_CONNECT_RETRY_ATTEMPTS}) tenant=${tenantKey}`,
+                        { message: err?.message }
+                    );
+                    await sleep(DB_CONNECT_RETRY_DELAY_MS);
+                } else {
+                    log.warn(
+                        `[worker:init] DB 연결 포기 after ${DB_CONNECT_RETRY_ATTEMPTS}회 시도 tenant=${tenantKey}`,
+                        lastError
+                    );
+                    process.exit(1);
+                }
+            }
+        }
+    }
 
     const ac = new AbortController();
     const shutdown = async (sig) => {
@@ -71,10 +104,12 @@ export async function initializeWorker(opts = {}) {
         } catch {
             //무시
         }
-        try {
-            await disconnectPrisma(tenantKey);
-        } catch {
-            //무시
+        if (tenantKey !== "global") {
+            try {
+                await disconnectPrisma(tenantKey);
+            } catch {
+                //무시
+            }
         }
         process.exit(0);
     };
