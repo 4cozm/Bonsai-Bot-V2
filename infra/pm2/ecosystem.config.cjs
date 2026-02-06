@@ -15,7 +15,8 @@ module.exports = {
             name: "global",
             script: "apps/global/src/app.js",
             watch: false,
-
+            autorestart: false,
+            max_restarts: 0,
             // 전역 오케스트레이터는 테넌트와 무관하게 1개만 실행된다.
             env: { RUN_MODE: "global" },
             env_production: { RUN_MODE: "global" },
@@ -24,6 +25,8 @@ module.exports = {
             name: "worker-global",
             script: "apps/tenants/src/app.js",
             watch: false,
+            autorestart: false,
+            max_restarts: 0,
             // 시세 등 전역 1회 처리; bonsai:cmd:global만 구독, DB 미사용
             env: { RUN_MODE: "tenant-worker", TENANT: "global" },
             env_production: { RUN_MODE: "tenant-worker", TENANT: "global" },
@@ -31,16 +34,20 @@ module.exports = {
         {
             name: "CAT",
             script: "apps/tenants/src/app.js",
+            watch: false,
+            autorestart: false,
+            max_restarts: 0,
             env: { RUN_MODE: "tenant-worker", TENANT: "CAT" },
             env_production: { RUN_MODE: "tenant-worker", TENANT: "CAT" },
-            watch: false,
         },
         {
             name: "FISH",
             script: "apps/tenants/src/app.js",
+            watch: false,
+            autorestart: false,
+            max_restarts: 0,
             env: { RUN_MODE: "tenant-worker", TENANT: "FISH" },
             env_production: { RUN_MODE: "tenant-worker", TENANT: "FISH" },
-            watch: false,
         },
     ],
 };

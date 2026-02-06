@@ -1,5 +1,5 @@
 // packages/master/src/discord/interactionRouter.js
-import { logger } from "@bonsai/shared";
+import { logger, pickDeferPhrase } from "@bonsai/shared";
 import { publishDevCommand } from "../usecases/publishDevCommand.js";
 import { publishProdCommand } from "../usecases/publishProdCommand.js";
 
@@ -44,7 +44,7 @@ export async function routeInteraction(interaction, ctx = {}) {
 
             pendingMap.set(res.envelopeId, { interaction });
             await interaction.editReply(
-                `dev 요청 접수됨 (tenant=${res.tenantKey}, targetDev=${res.targetDev})\n처리 중...`
+                `dev 요청 접수됨 (tenant=${res.tenantKey}, targetDev=${res.targetDev})\n${pickDeferPhrase()}`
             );
             return;
         }
@@ -73,7 +73,7 @@ export async function routeInteraction(interaction, ctx = {}) {
         );
 
         pendingMap.set(res.envelopeId, { interaction });
-        await interaction.editReply(`요청 접수됨 (tenant=${res.tenantKey})\n처리 중...`);
+        await interaction.editReply(`요청 접수됨 (tenant=${res.tenantKey})\n${pickDeferPhrase()}`);
     } catch (err) {
         log.error("[router] 처리 실패", err);
         await interaction.editReply("처리 실패");
