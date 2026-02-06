@@ -2,10 +2,8 @@
 import { logger } from "@bonsai/shared";
 import { HUB_CHOICES, HUBS, MINERAL_ITEMS } from "../market/constants.js";
 import {
-    buildMarketTable,
+    formatMarketEmbedFields,
     formatTimestampKST,
-    fmtIskInteger,
-    fmtSpreadPct,
     shortenItemName,
 } from "../market/embedFormat.js";
 import { getMarketPrice } from "../market/esiMarketCache.js";
@@ -147,30 +145,33 @@ export default {
                 ? formatTimestampKST(fetchedAtMax)
                 : formatTimestampKST(Math.floor(Date.now() / 1000));
 
-        const tableRows = top.map((r) => {
-            const itemStr = shortenItemName(r.name ?? `타입 ${r.typeId}`, "mineral");
-            const sellStr = r.sell != null ? fmtIskInteger(r.sell) : "—";
-            const buyStr = r.buy != null ? fmtIskInteger(r.buy) : "—";
-            const spreadStr = fmtSpreadPct(r.sell, r.buy, log);
-            const iskm3Str =
-                r.sell != null && r.volume > 0 ? fmtIskInteger(Math.round(r.iskPerM3)) : "—";
-            return [itemStr, sellStr, buyStr, spreadStr, iskm3Str];
-        });
+        const tableRows = top.map((r) => ({
+            item: shortenItemName(r.name ?? `타입 ${r.typeId}`, "mineral"),
+            sell: r.sell ?? null,
+            buy: r.buy ?? null,
+            sprd: r.spreadPct ?? null,
+            iskm3:
+                r.iskPerM3 != null && Number.isFinite(r.iskPerM3) ? Math.round(r.iskPerM3) : null,
+        }));
 
-        const title = `광물 · ${hubInfo.label}`;
+        const title = `압축 광물 · ${hubInfo.label}`;
         const description =
             `${hubInfo.stationName}\n` + `정렬 ISK/m³@Sell ↓ · Top ${TOP_N} · 갱신 ${timestampKST}`;
         const footer = hasStale
             ? "일부 캐시(stale) · ESI 기준 · 60초 캐시"
             : "ESI 기준 · 60초 캐시";
 
-        const tableBlock = buildMarketTable(tableRows);
+        const { itemValue, sellBuyValue, iskm3Value } = formatMarketEmbedFields(tableRows);
 
         const embeds = [
             {
                 title,
                 description,
-                fields: [{ name: "시세", value: tableBlock, inline: false }],
+                fields: [
+                    { name: "Item", value: itemValue, inline: true },
+                    { name: "Sell / Buy", value: sellBuyValue, inline: true },
+                    { name: "ISK·m³", value: iskm3Value, inline: true },
+                ],
                 footer,
                 color: 0x2ecc71,
                 timestamp: false,
