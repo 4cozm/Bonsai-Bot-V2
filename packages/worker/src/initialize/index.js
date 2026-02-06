@@ -59,8 +59,12 @@ export async function initializeWorker(opts = {}) {
     loadEsiConfig();
 
     const redis = await createRedisClient();
-    await ensureTenantDbAndMigrate({ redis, tenantKey, log });
-    const prisma = getPrisma(tenantKey);
+    // 전역 워커(시세 등)는 DB 미사용; Tenant만 DB 생성/마이그레이션
+    let prisma = null;
+    if (tenantKey !== "global") {
+        await ensureTenantDbAndMigrate({ redis, tenantKey, log });
+        prisma = getPrisma(tenantKey);
+    }
 
     const ac = new AbortController();
     const shutdown = async (sig) => {
@@ -71,10 +75,12 @@ export async function initializeWorker(opts = {}) {
         } catch {
             //무시
         }
-        try {
-            await disconnectPrisma(tenantKey);
-        } catch {
-            //무시
+        if (tenantKey !== "global") {
+            try {
+                await disconnectPrisma(tenantKey);
+            } catch {
+                //무시
+            }
         }
         process.exit(0);
     };

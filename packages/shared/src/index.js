@@ -1,5 +1,6 @@
 export { buildCmdEnvelope, buildResultEnvelope } from "./bus/envelope.js";
 export { publishCmdToRedisStream } from "./bus/publishCmdToRedisStream.js";
+export { publishToGlobalCmdStream } from "./bus/publishToGlobalCmdStream.js";
 export { keySetsFor } from "./config/keys.js";
 export { loadEsiConfig } from "./esi/loadEsiConfig.js";
 export { parseEveEsiScope } from "./esi/parseEveEsiScope.js";

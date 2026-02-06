@@ -21,6 +21,14 @@ module.exports = {
             env_production: { RUN_MODE: "global" },
         },
         {
+            name: "worker-global",
+            script: "apps/tenants/src/app.js",
+            watch: false,
+            // 시세 등 전역 1회 처리; bonsai:cmd:global만 구독, DB 미사용
+            env: { RUN_MODE: "tenant-worker", TENANT: "global" },
+            env_production: { RUN_MODE: "tenant-worker", TENANT: "global" },
+        },
+        {
             name: "CAT",
             script: "apps/tenants/src/app.js",
             env: { RUN_MODE: "tenant-worker", TENANT: "CAT" },
