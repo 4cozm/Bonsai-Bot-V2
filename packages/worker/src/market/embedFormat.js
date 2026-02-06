@@ -36,15 +36,16 @@ export function fmtSpreadPct(sell, buy, log) {
 const ITEM_NAME_MAX_LEN = 12;
 
 /**
- * Fullerite: "Fullerite-" 접두어 제거 (C50, C320 등). 그 외: 12자 제한 + ….
+ * Fullerite: "Fullerite-" 또는 "풀러라이트-" 접두어 제거 (C50, C320 등). 그 외: 12자 제한 + ….
  * @param {string} name
  * @param {"fullerite"|"mineral"|"ice"} [category]
  * @returns {string}
  */
 export function shortenItemName(name, category = "mineral") {
     let s = String(name ?? "").trim() || "—";
-    if (category === "fullerite" && s.startsWith("Fullerite-")) {
-        s = s.slice("Fullerite-".length);
+    if (category === "fullerite") {
+        if (s.startsWith("Fullerite-")) s = s.slice("Fullerite-".length);
+        else if (s.startsWith("풀러라이트-")) s = s.slice("풀러라이트-".length);
     }
     if (s.length <= ITEM_NAME_MAX_LEN) return s;
     return s.slice(0, ITEM_NAME_MAX_LEN) + "…";

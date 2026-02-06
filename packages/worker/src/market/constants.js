@@ -48,40 +48,40 @@ export const HUB_CHOICES = Object.freeze([
 
 /** Fullerite 9종 (웜홀 가스). typeId 30370~30378, 표시명·volume 고정 */
 export const FULLERITE_ITEMS = Object.freeze([
-    { typeId: 30370, name: "Fullerite-C50", volume: 1 },
-    { typeId: 30371, name: "Fullerite-C60", volume: 1 },
-    { typeId: 30372, name: "Fullerite-C70", volume: 1 },
-    { typeId: 30373, name: "Fullerite-C72", volume: 1 },
-    { typeId: 30374, name: "Fullerite-C84", volume: 2 },
-    { typeId: 30375, name: "Fullerite-C28", volume: 2 },
-    { typeId: 30376, name: "Fullerite-C32", volume: 5 },
-    { typeId: 30377, name: "Fullerite-C320", volume: 5 },
-    { typeId: 30378, name: "Fullerite-C540", volume: 10 },
+    { typeId: 30370, name: "풀러라이트-C50", volume: 1 },
+    { typeId: 30371, name: "풀러라이트-C60", volume: 1 },
+    { typeId: 30372, name: "풀러라이트-C70", volume: 1 },
+    { typeId: 30373, name: "풀러라이트-C72", volume: 2 },
+    { typeId: 30374, name: "풀러라이트-C84", volume: 2 },
+    { typeId: 30375, name: "풀러라이트-C28", volume: 2 },
+    { typeId: 30376, name: "풀러라이트-C32", volume: 5 },
+    { typeId: 30377, name: "풀러라이트-C320", volume: 5 },
+    { typeId: 30378, name: "풀러라이트-C540", volume: 10 },
 ]);
 
 /** 기본 오어 12종 (변종 오어 제외). 표시명·volume 고정 */
 export const MINERAL_ITEMS = Object.freeze([
-    { typeId: 22, name: "Arkonor", volume: 16 },
-    { typeId: 19, name: "Spodumain", volume: 16 },
-    { typeId: 18, name: "Plagioclase", volume: 0.35 },
-    { typeId: 1223, name: "Bistot", volume: 16 },
-    { typeId: 1225, name: "Crokite", volume: 8 },
-    { typeId: 1226, name: "Jaspet", volume: 2 },
-    { typeId: 1227, name: "Omber", volume: 0.6 },
-    { typeId: 1228, name: "Scordite", volume: 0.15 },
-    { typeId: 1229, name: "Gneiss", volume: 16 },
-    { typeId: 1230, name: "Veldspar", volume: 0.1 },
-    { typeId: 1232, name: "Dark Ochre", volume: 8 },
-    { typeId: 11396, name: "Mercoxit", volume: 40 },
+    { typeId: 62568, name: "압축된 아르카노르", volume: 0.16 },
+    { typeId: 62572, name: "압축된 스포듀마인", volume: 0.16 },
+    { typeId: 62528, name: "압축된 플레지오클레이스", volume: 0.0035 },
+    { typeId: 62564, name: "압축된 비스토트", volume: 0.16 },
+    { typeId: 62560, name: "압축된 크로카이트", volume: 0.16 },
+    { typeId: 62540, name: "압축된 자스페트", volume: 0.02 },
+    { typeId: 62532, name: "압축된 옴버", volume: 0.006 },
+    { typeId: 62520, name: "압축된 스코다이트", volume: 0.0015 },
+    { typeId: 62552, name: "압축된 니스", volume: 0.05 },
+    { typeId: 62516, name: "압축된 벨드스파", volume: 0.001 },
+    { typeId: 62556, name: "압축된 다크 오커", volume: 0.08 },
+    { typeId: 62586, name: "압축된 메르코시트", volume: 0.4 },
 ]);
 
 /** 아이스 산출물 7종. 표시명·volume 고정 */
 export const ICE_ITEMS = Object.freeze([
-    { typeId: 16272, name: "Heavy Water", volume: 1 },
-    { typeId: 16273, name: "Liquid Ozone", volume: 1 },
-    { typeId: 16274, name: "Helium Isotopes", volume: 1 },
-    { typeId: 16275, name: "Strontium Clathrates", volume: 1 },
-    { typeId: 17889, name: "Hydrogen Isotopes", volume: 1 },
-    { typeId: 17888, name: "Nitrogen Isotopes", volume: 1 },
-    { typeId: 17887, name: "Oxygen Isotopes", volume: 1 },
+    { typeId: 16272, name: "중수", volume: 0.4 },
+    { typeId: 16273, name: "액체 오존", volume: 0.4 },
+    { typeId: 16274, name: "헬륨 동위원소", volume: 0.03 },
+    { typeId: 16275, name: "스트론튬 클라트레이트", volume: 3.0 },
+    { typeId: 17889, name: "수소 동위원소", volume: 0.03 },
+    { typeId: 17888, name: "질소 동위원소", volume: 0.03 },
+    { typeId: 17887, name: "산소 동위원소", volume: 0.03 },
 ]);

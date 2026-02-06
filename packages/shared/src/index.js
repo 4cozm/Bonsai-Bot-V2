@@ -7,3 +7,4 @@ export { parseEveEsiScope } from "./esi/parseEveEsiScope.js";
 export { consumeNonce, issueNonce } from "./esi/redisNonce.js";
 export { signState, verifyState } from "./esi/stateSign.js";
 export { logger } from "./utils/logger.js";
+export { sendDiscordWebhook } from "./utils/sendDiscordWebhook.js";
