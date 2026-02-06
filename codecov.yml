@@ -1,5 +1,5 @@
-codecov:
-    # token: ${CODECOV_TOKEN}
+# token은 CI에서 secrets.CODECOV_TOKEN으로 전달
+codecov: {}
 
 coverage:
     precision: 2
