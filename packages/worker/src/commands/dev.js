@@ -108,13 +108,9 @@ export default {
         const innerEnv = { ...envelope, cmd: cmd, args: args };
         const res = await def.execute(ctx, innerEnv);
         if (!res || typeof res !== "object") return res;
-        const addEphemeral = ephemeral === true;
-        const data =
-            res.data != null && typeof res.data === "object"
-                ? { ...res.data, ...(addEphemeral ? { ephemeralReply: true } : {}) }
-                : addEphemeral
-                  ? { ephemeralReply: true }
-                  : res.data;
+        // 사용자 요청(ephemeral)으로 항상 덮어써서, 내부 명령의 ephemeralReply가 공개 요청을 무시하지 않도록 함
+        const baseData = res.data != null && typeof res.data === "object" ? res.data : {};
+        const data = { ...baseData, ephemeralReply: ephemeral };
         return { ok: res.ok, data, meta: res.meta };
     },
 };

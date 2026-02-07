@@ -98,6 +98,8 @@ export default {
             // ignore
         }
 
+        const ephemeral = args?.ephemeral !== false;
+
         const typeRaw = String(args?.type ?? "")
             .trim()
             .toLowerCase();
@@ -106,6 +108,7 @@ export default {
                 ok: false,
                 data: {
                     error: "시세 종류를 선택해 주세요. 광물 / 아이스 / 가스 중 하나입니다.",
+                    ephemeralReply: ephemeral,
                 },
             };
         }
@@ -118,11 +121,10 @@ export default {
                 ok: false,
                 data: {
                     error: "지원하지 않는 상권입니다. 지타/아마르/헤크/도딕시/렌스 중 선택해 주세요.",
+                    ephemeralReply: ephemeral,
                 },
             };
         }
-
-        const ephemeral = args?.ephemeral !== false;
 
         const config = TYPE_CONFIG[typeRaw];
         const items = config.items;
