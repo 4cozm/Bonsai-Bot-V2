@@ -10,13 +10,14 @@ describe("shared/esi/refreshEveToken", () => {
     });
 
     test("refreshToken 빈 문자열 → null", async () => {
+        globalThis.fetch = jest.fn();
         const result = await refreshEveToken({
             refreshToken: "",
             clientId: "c",
             clientSecret: "s",
         });
         expect(result).toBeNull();
-        expect(globalThis.fetch).not.toHaveBeenCalled?.();
+        expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
     test("refreshToken 공백만 → null", async () => {
