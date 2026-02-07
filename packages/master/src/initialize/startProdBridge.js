@@ -214,13 +214,20 @@ async function handleResult({ resultEnv, pendingMap, source }) {
 
     const ok = Boolean(resultEnv?.ok);
     const data = resultEnv?.data ?? null;
+    const ephemeralReply = data != null && data.ephemeralReply === true;
+    const replyFlags = ephemeralReply ? 64 : undefined; // 64 = EPHEMERAL (본인만 보기)
 
     if (!ok) {
-        await interaction.editReply({ content: `❌ 처리 실패\n${safeStringify(data)}` });
+        const payload = { content: `❌ 처리 실패\n${safeStringify(data)}` };
+        if (replyFlags != null) payload.flags = replyFlags;
+        await interaction.editReply(payload);
         return true;
     }
 
     const render = buildDiscordReplyPayload(data);
+    if (replyFlags != null) {
+        render.flags = replyFlags;
+    }
     await interaction.editReply(render);
 
     const rawEphemeral =

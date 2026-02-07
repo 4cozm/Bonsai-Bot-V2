@@ -11,15 +11,29 @@ await jest.unstable_mockModule("../src/market/esiMarketCache.js", () => ({
     }),
 }));
 
-const mineralPrice = (await import("../src/commands/mineralPrice.js")).default;
+const marketPrice = (await import("../src/commands/marketPrice.js")).default;
 
-describe("worker/commands 시세 (광물시세) hub 검증·에러 형식", () => {
+describe("worker/commands 시세 (marketPrice) type·hub 검증·에러 형식", () => {
+    test("type 없음/잘못된 type → ok:false, data.error 메시지", async () => {
+        const ctx = { redis: {}, tenantKey: "CAT" };
+        const envelopeNoType = { args: '{"hub":"jita"}' };
+        const envelopeBadType = { args: '{"type":"x","hub":"jita"}' };
+
+        const outNoType = await marketPrice.execute(ctx, envelopeNoType);
+        expect(outNoType.ok).toBe(false);
+        expect(outNoType.data.error).toContain("시세 종류");
+
+        const outBadType = await marketPrice.execute(ctx, envelopeBadType);
+        expect(outBadType.ok).toBe(false);
+        expect(outBadType.data.error).toContain("시세 종류");
+    });
+
     test("hub 없음/잘못된 hub → ok:false, data.error 메시지", async () => {
         const ctx = { redis: {}, tenantKey: "CAT" };
-        const envelopeNoHub = { args: "{}" };
-        const envelopeBadHub = { args: '{"hub":"invalid"}' };
+        const envelopeNoHub = { args: '{"type":"mineral"}' };
+        const envelopeBadHub = { args: '{"type":"mineral","hub":"invalid"}' };
 
-        const outNoHub = await mineralPrice.execute(ctx, envelopeNoHub);
+        const outNoHub = await marketPrice.execute(ctx, envelopeNoHub);
         expect(outNoHub.ok).toBe(false);
         expect(outNoHub.data).toEqual(
             expect.objectContaining({
@@ -27,30 +41,31 @@ describe("worker/commands 시세 (광물시세) hub 검증·에러 형식", () =
             })
         );
 
-        const outBadHub = await mineralPrice.execute(ctx, envelopeBadHub);
+        const outBadHub = await marketPrice.execute(ctx, envelopeBadHub);
         expect(outBadHub.ok).toBe(false);
         expect(outBadHub.data.error).toContain("지원하지 않는 상권");
     });
 
     test("redis 없음 → ok:false, data.error 시스템 설정 오류", async () => {
         const ctx = { redis: null, tenantKey: "CAT" };
-        const envelope = { args: '{"hub":"jita"}' };
+        const envelope = { args: '{"type":"mineral","hub":"jita"}' };
 
-        const out = await mineralPrice.execute(ctx, envelope);
+        const out = await marketPrice.execute(ctx, envelope);
         expect(out.ok).toBe(false);
         expect(out.data.error).toBe("시스템 설정 오류");
     });
 });
 
-describe("worker/commands 시세 (광물시세) 정상 시 embed 구조", () => {
-    test("hub jita + mock cache → ok:true, embeds[0].fields 3개·inline true", async () => {
+describe("worker/commands 시세 (marketPrice) 정상 시 embed 구조·ephemeral", () => {
+    test("type mineral, hub jita + mock cache → ok:true, embeds[0].fields 3개·ephemeralReply 기본 true", async () => {
         const ctx = { redis: {}, tenantKey: "global" };
-        const envelope = { args: '{"hub":"jita"}' };
+        const envelope = { args: '{"type":"mineral","hub":"jita"}' };
 
-        const out = await mineralPrice.execute(ctx, envelope);
+        const out = await marketPrice.execute(ctx, envelope);
 
         expect(out.ok).toBe(true);
         expect(out.data.embed).toBe(true);
+        expect(out.data.ephemeralReply).toBe(true);
         expect(Array.isArray(out.data.embeds)).toBe(true);
         expect(out.data.embeds.length).toBe(1);
         const embed = out.data.embeds[0];
@@ -58,5 +73,15 @@ describe("worker/commands 시세 (광물시세) 정상 시 embed 구조", () => 
         const names = embed.fields.map((f) => f.name);
         expect(names).toEqual(["Item", "Sell / Buy", "ISK·m³"]);
         embed.fields.forEach((f) => expect(f.inline).toBe(true));
+    });
+
+    test("ephemeral false → data.ephemeralReply false", async () => {
+        const ctx = { redis: {}, tenantKey: "global" };
+        const envelope = { args: '{"type":"mineral","hub":"jita","ephemeral":false}' };
+
+        const out = await marketPrice.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        expect(out.data.ephemeralReply).toBe(false);
     });
 });
