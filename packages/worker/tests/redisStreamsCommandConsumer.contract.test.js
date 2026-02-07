@@ -34,6 +34,6 @@ describe("worker/redisStreamsCommandConsumer 계약 (에러 반환 형식)", () 
     test("commandMap에 없는 이름은 get으로 undefined", () => {
         const map = getCommandMap();
         expect(map.get("__nonexistent__")).toBeUndefined();
-        expect(map.get("가스시세")).toBeDefined();
+        expect(map.get("시세")).toBeDefined();
     });
 });

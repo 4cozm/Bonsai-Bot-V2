@@ -29,7 +29,7 @@ describe("shared/bus/publishToGlobalCmdStream", () => {
             type: "cmd",
             id: "cmd-uuid-1",
             tenantKey: "CAT",
-            cmd: "가스시세",
+            cmd: "시세",
             args: "{}",
             meta: { issuedAt: 123 },
         };
@@ -42,7 +42,7 @@ describe("shared/bus/publishToGlobalCmdStream", () => {
         expect(payload.tenantKey).toBe("global");
         expect(payload.scope).toBe("global");
         expect(payload.id).toBe("cmd-uuid-1");
-        expect(payload.cmd).toBe("가스시세");
+        expect(payload.cmd).toBe("시세");
         expect(payload.meta.issuedAt).toBe(123);
     });
 });

@@ -5,9 +5,12 @@ import { structureTypeMapping } from "../esi/structureTypeMapping.js";
 
 const log = logger();
 
+const FUEL_CACHE_TTL_SEC = 60;
+const FUEL_CACHE_KEY_PREFIX = "bonsai:cache:fuel:";
+
 /**
  * /연료: 테넌트별 EVE_ANCHOR_CHARIDS로 코퍼레이션 구조물 연료 조회 후 임베드 반환.
- * 자동 연료 체크는 미구현.
+ * 성공 응답은 1분간 Redis 캐시(난사 방지). 자동 연료 체크는 fuelDailyCheck.
  */
 export default {
     name: "연료",
@@ -15,7 +18,14 @@ export default {
         name: "연료",
         description: "스트럭쳐의 현재 연료량을 반환합니다",
         type: 1,
-        options: [],
+        options: [
+            {
+                name: "ephemeral",
+                description: "본인만 보기 (기본: 켜짐)",
+                type: 5,
+                required: false,
+            },
+        ],
     },
 
     /**
@@ -27,18 +37,49 @@ export default {
      */
     async execute(ctx, envelope) {
         const prisma = ctx?.prisma;
+        const redis = ctx?.redis;
         const tenantKey = String(ctx?.tenantKey ?? "").trim();
+
+        let args = {};
+        try {
+            const raw = envelope?.args;
+            if (typeof raw === "string" && raw.trim()) args = JSON.parse(raw);
+            else if (raw && typeof raw === "object") args = raw;
+        } catch {
+            // ignore
+        }
+        const ephemeral = args?.ephemeral !== false;
+
+        if (redis && tenantKey) {
+            const cacheKey = `${FUEL_CACHE_KEY_PREFIX}${tenantKey}`;
+            try {
+                const cached = await redis.get(cacheKey);
+                if (cached) {
+                    const data = JSON.parse(cached);
+                    log.info("[cmd:연료] 캐시 히트", { tenantKey });
+                    return {
+                        ok: true,
+                        data: { ...data, ephemeralReply: ephemeral },
+                    };
+                }
+            } catch {
+                // 캐시 파싱 실패 시 조회 진행
+            }
+        }
 
         if (!prisma) {
             log.warn("[cmd:연료] prisma 주입 없음");
-            return { ok: false, data: { error: "시스템 설정 오류" } };
+            return { ok: false, data: { error: "시스템 설정 오류", ephemeralReply: ephemeral } };
         }
 
         const pairs = parseAnchorCharIds(process.env.EVE_ANCHOR_CHARIDS);
         if (pairs.length === 0) {
             return {
                 ok: false,
-                data: { error: "연료 조회용 캐릭터 설정이 없습니다. (EVE_ANCHOR_CHARIDS)" },
+                data: {
+                    error: "연료 조회용 캐릭터 설정이 없습니다. (EVE_ANCHOR_CHARIDS)",
+                    ephemeralReply: ephemeral,
+                },
             };
         }
 
@@ -61,7 +102,10 @@ export default {
         if (allStructures.length === 0) {
             return {
                 ok: false,
-                data: { error: "스트럭쳐 정보가 없어요. 나중에 다시 시도해 주세요." },
+                data: {
+                    error: "스트럭쳐 정보가 없어요. 나중에 다시 시도해 주세요.",
+                    ephemeralReply: ephemeral,
+                },
             };
         }
 
@@ -98,20 +142,35 @@ export default {
 
         log.info("[cmd:연료] 조회 완료", { tenantKey, structures: allStructures.length });
 
-        return {
-            ok: true,
-            data: {
-                embed: true,
-                embeds: [
-                    {
-                        title: "현재 스트럭쳐 연료 상태",
-                        description: "다음은 각 스트럭쳐의 연료 상태입니다.",
-                        fields,
-                        color: 0x800080,
-                        timestamp: false,
-                    },
-                ],
-            },
+        const data = {
+            embed: true,
+            embeds: [
+                {
+                    title: "현재 스트럭쳐 연료 상태",
+                    description: "다음은 각 스트럭쳐의 연료 상태입니다.",
+                    fields,
+                    color: 0x800080,
+                    timestamp: false,
+                },
+            ],
+            ephemeralReply: ephemeral,
         };
+
+        if (redis && tenantKey) {
+            const cacheKey = `${FUEL_CACHE_KEY_PREFIX}${tenantKey}`;
+            const cachePayload = {
+                embed: data.embed,
+                embeds: data.embeds,
+            };
+            try {
+                await redis.set(cacheKey, JSON.stringify(cachePayload), {
+                    EX: FUEL_CACHE_TTL_SEC,
+                });
+            } catch (e) {
+                log.warn("[cmd:연료] 캐시 저장 실패", { tenantKey, message: e?.message });
+            }
+        }
+
+        return { ok: true, data };
     },
 };
