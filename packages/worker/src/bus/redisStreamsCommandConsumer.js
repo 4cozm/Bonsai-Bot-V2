@@ -4,7 +4,7 @@ import { getCommandMap } from "../commands/index.js";
 const commandMap = getCommandMap();
 
 /** 전역 1회 처리 대상(시세 등). Tenant Worker는 실행하지 않고 bonsai:cmd:global로 재발행만 한다. */
-const GLOBAL_MARKET_COMMANDS = Object.freeze(["가스시세", "광물시세", "얼음시세"]);
+const GLOBAL_MARKET_COMMANDS = Object.freeze(["시세"]);
 
 /**
  * Redis Streams consumer group이 없으면 생성한다.

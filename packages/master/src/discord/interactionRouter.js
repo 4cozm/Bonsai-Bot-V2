@@ -31,6 +31,7 @@ export async function routeInteraction(interaction, ctx = {}) {
 
             const innerCmd = interaction.options.getString("cmd", true);
             const args = interaction.options.getString("args", false) ?? "";
+            const ephemeral = interaction.options.getBoolean("ephemeral") ?? true;
 
             const res = await publishDevCommand({
                 discordUserId: interaction.user.id,
@@ -38,6 +39,7 @@ export async function routeInteraction(interaction, ctx = {}) {
                 channelId: interaction.channelId ?? "",
                 cmd: innerCmd,
                 args,
+                ephemeral,
                 interactionId: interaction.id,
                 interactionToken: interaction.token,
             });
@@ -76,7 +78,11 @@ export async function routeInteraction(interaction, ctx = {}) {
         await interaction.editReply(`요청 접수됨 (tenant=${res.tenantKey})\n${pickDeferPhrase()}`);
     } catch (err) {
         log.error("[router] 처리 실패", err);
-        await interaction.editReply("처리 실패");
+        const message =
+            String(err?.message ?? "").trim() === "허용되지 않은 채널"
+                ? "허용되지 않은 채널"
+                : "처리 실패";
+        await interaction.editReply(message);
     }
 }
 

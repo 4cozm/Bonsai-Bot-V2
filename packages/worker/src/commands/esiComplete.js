@@ -84,6 +84,16 @@ export default {
                         });
                     }
                 }
+                const tokenData =
+                    reg.accessToken != null &&
+                    reg.refreshToken != null &&
+                    reg.tokenExpiresAt != null
+                        ? {
+                              accessToken: reg.accessToken,
+                              refreshToken: reg.refreshToken,
+                              tokenExpiresAt: reg.tokenExpiresAt,
+                          }
+                        : {};
                 await tx.eveCharacter.upsert({
                     where: { characterId: reg.characterId },
                     create: {
@@ -91,15 +101,22 @@ export default {
                         characterId: reg.characterId,
                         characterName: reg.characterName,
                         isMain: isMainCandidate,
+                        ...tokenData,
                     },
                     update: {
                         characterName: reg.characterName,
                         ...(isMainCandidate ? { isMain: true } : {}),
+                        ...tokenData,
                     },
                 });
                 await tx.esiRegistration.update({
                     where: { id: registrationId },
-                    data: { status: "CONFIRMED" },
+                    data: {
+                        status: "CONFIRMED",
+                        accessToken: null,
+                        refreshToken: null,
+                        tokenExpiresAt: null,
+                    },
                 });
             });
         } catch (err) {

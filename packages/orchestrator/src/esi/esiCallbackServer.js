@@ -107,12 +107,16 @@ async function handleCallback(url, deps) {
         return { statusCode: 400, body: "Already processed" };
     }
 
+    const tokenExpiresAt = new Date(Date.now() + tokenResult.expires_in * 1000);
     await prisma.esiRegistration.update({
         where: { id: reg.id },
         data: {
             characterId: charInfo.characterId,
             characterName: charInfo.characterName,
             mainCandidate,
+            accessToken: tokenResult.access_token,
+            refreshToken: tokenResult.refresh_token ?? null,
+            tokenExpiresAt,
         },
     });
 

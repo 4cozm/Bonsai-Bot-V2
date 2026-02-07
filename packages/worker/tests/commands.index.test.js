@@ -12,8 +12,7 @@ describe("worker/commands/index getCommandMap()", () => {
         expect(map.has("가입")).toBe(true);
         expect(map.has("esi-complete")).toBe(true);
         expect(map.has("캐릭터목록")).toBe(true);
-        expect(map.has("가스시세")).toBe(true);
-        expect(map.has("광물시세")).toBe(true);
+        expect(map.has("시세")).toBe(true);
 
         const ping = map.get("핑");
         expect(typeof ping.execute).toBe("function");

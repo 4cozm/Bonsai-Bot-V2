@@ -1,6 +1,12 @@
-// packages/worker/src/commands/gasPrice.js
+// packages/worker/src/commands/marketPrice.js
 import { logger } from "@bonsai/shared";
-import { FULLERITE_ITEMS, HUB_CHOICES, HUBS } from "../market/constants.js";
+import {
+    FULLERITE_ITEMS,
+    HUB_CHOICES,
+    HUBS,
+    ICE_ITEMS,
+    MINERAL_ITEMS,
+} from "../market/constants.js";
 import {
     formatMarketEmbedFields,
     formatTimestampKST,
@@ -12,19 +18,59 @@ const log = logger();
 
 const TOP_N = 12;
 
+const TYPE_CHOICES = Object.freeze([
+    { name: "광물", value: "mineral" },
+    { name: "아이스", value: "ice" },
+    { name: "가스", value: "gas" },
+]);
+
+const TYPE_CONFIG = Object.freeze({
+    mineral: {
+        items: MINERAL_ITEMS,
+        titlePrefix: "압축 광물",
+        shortenCategory: "mineral",
+        color: 0x2ecc71,
+    },
+    ice: {
+        items: ICE_ITEMS,
+        titlePrefix: "아이스 산출물",
+        shortenCategory: "ice",
+        color: 0x1abc9c,
+    },
+    gas: {
+        items: FULLERITE_ITEMS,
+        titlePrefix: "웜홀 가스",
+        shortenCategory: "fullerite",
+        color: 0x3498db,
+    },
+});
+
 export default {
-    name: "가스시세",
+    name: "시세",
     discord: {
-        name: "가스시세",
-        description: "웜홀 가스(Fullerite 9종) 시세 — 상권 선택",
+        name: "시세",
+        description: "광물·아이스·가스 시세 — 상권 선택",
         type: 1,
         options: [
+            {
+                name: "type",
+                description: "시세 종류",
+                type: 3,
+                required: true,
+                choices: [...TYPE_CHOICES],
+            },
             {
                 name: "hub",
                 description: "상권 (지타/아마르/헤크/도딕시/렌스 중 선택)",
                 type: 3,
                 required: true,
                 choices: [...HUB_CHOICES],
+            },
+            {
+                name: "ephemeral",
+                description: "본인만 보기 (기본: 켜짐)",
+                type: 5,
+                required: false,
             },
         ],
     },
@@ -51,6 +97,22 @@ export default {
         } catch {
             // ignore
         }
+
+        const ephemeral = args?.ephemeral !== false;
+
+        const typeRaw = String(args?.type ?? "")
+            .trim()
+            .toLowerCase();
+        if (!TYPE_CONFIG[typeRaw]) {
+            return {
+                ok: false,
+                data: {
+                    error: "시세 종류를 선택해 주세요. 광물 / 아이스 / 가스 중 하나입니다.",
+                    ephemeralReply: ephemeral,
+                },
+            };
+        }
+
         const hub = String(args?.hub ?? "")
             .trim()
             .toLowerCase();
@@ -59,22 +121,35 @@ export default {
                 ok: false,
                 data: {
                     error: "지원하지 않는 상권입니다. 지타/아마르/헤크/도딕시/렌스 중 선택해 주세요.",
+                    ephemeralReply: ephemeral,
                 },
             };
         }
 
+        const config = TYPE_CONFIG[typeRaw];
+        const items = config.items;
         const hubInfo = HUBS[hub];
-        const itemCount = FULLERITE_ITEMS.length;
-        log.info("[cmd:가스시세] 시세 조회 시작", { tenant: tenantKey, hub, items: itemCount });
 
-        const rowPromises = FULLERITE_ITEMS.map(async (item) => {
+        log.info("[cmd:시세] 시세 조회 시작", {
+            tenant: tenantKey,
+            type: typeRaw,
+            hub,
+            items: items.length,
+        });
+
+        const rowPromises = items.map(async (item) => {
             try {
-                const price = await getMarketPrice(redis, { tenantKey, hub, typeId: item.typeId });
+                const price = await getMarketPrice(redis, {
+                    tenantKey,
+                    hub,
+                    typeId: item.typeId,
+                });
                 const sell = price.sellMin;
                 const buy = price.buyMax;
 
                 if ((sell != null && sell <= 0) || (item.volume != null && item.volume <= 0)) {
-                    log.warn("[cmd:가스시세] 데이터 이상", {
+                    log.warn("[cmd:시세] 데이터 이상", {
+                        type: typeRaw,
                         typeId: item.typeId,
                         sell,
                         volume: item.volume,
@@ -97,7 +172,7 @@ export default {
                     hasStale: price.stale ?? false,
                 };
             } catch (err) {
-                log.warn(`[cmd:가스시세] typeId=${item.typeId} err=${err?.message}`);
+                log.warn(`[cmd:시세] type=${typeRaw} typeId=${item.typeId} err=${err?.message}`);
                 return {
                     name: item.name,
                     typeId: item.typeId,
@@ -119,8 +194,9 @@ export default {
         const hasAnyPrice = rows.some((r) => r.sell != null || r.buy != null);
         const noData = rows.length === 0 || errorCount === rows.length || !hasAnyPrice;
 
-        log.info("[cmd:가스시세] 시세 수집 완료", {
+        log.info("[cmd:시세] 시세 수집 완료", {
             tenant: tenantKey,
+            type: typeRaw,
             hub,
             rows: rows.length,
             errors: errorCount,
@@ -133,7 +209,10 @@ export default {
                 errorCount === rows.length && rows.length > 0
                     ? `시세 조회 실패 (모든 품목 오류, ${errorCount}건). ESI/네트워크 확인 후 재시도해 주세요.`
                     : "시세 데이터를 가져오지 못했습니다.";
-            return { ok: false, data: { error: msg } };
+            return {
+                ok: false,
+                data: { error: msg, ephemeralReply: ephemeral },
+            };
         }
 
         rows.sort((a, b) => (b.iskPerM3 ?? 0) - (a.iskPerM3 ?? 0));
@@ -146,7 +225,7 @@ export default {
                 : formatTimestampKST(Math.floor(Date.now() / 1000));
 
         const tableRows = top.map((r) => ({
-            item: shortenItemName(r.name ?? `타입 ${r.typeId}`, "fullerite"),
+            item: shortenItemName(r.name ?? `타입 ${r.typeId}`, config.shortenCategory),
             sell: r.sell ?? null,
             buy: r.buy ?? null,
             sprd: r.spreadPct ?? null,
@@ -154,7 +233,7 @@ export default {
                 r.iskPerM3 != null && Number.isFinite(r.iskPerM3) ? Math.round(r.iskPerM3) : null,
         }));
 
-        const title = `웜홀 가스 · ${hubInfo.label}`;
+        const title = `${config.titlePrefix} · ${hubInfo.label}`;
         const description =
             `${hubInfo.stationName}\n` + `정렬 ISK/m³@Sell ↓ · Top ${TOP_N} · 갱신 ${timestampKST}`;
         const footer = hasStale
@@ -173,7 +252,7 @@ export default {
                     { name: "ISK·m³", value: iskm3Value, inline: true },
                 ],
                 footer,
-                color: 0x3498db,
+                color: config.color,
                 timestamp: false,
             },
         ];
@@ -186,6 +265,7 @@ export default {
                 title,
                 description,
                 footer,
+                ephemeralReply: ephemeral,
             },
         };
     },

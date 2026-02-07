@@ -58,6 +58,7 @@ export const ENV_REQUIRED = Object.freeze({
             "EVE_ESI_CLIENT_SECRET",
             "EVE_ESI_REDIRECT_URI",
             "EVE_ESI_SCOPE",
+            "DISCORD_ALERT_WEBHOOK_URL",
         ]),
     }),
 
@@ -90,6 +91,7 @@ export const ENV_REQUIRED = Object.freeze({
  */
 export const WORKER_TENANT_REQUIRED = Object.freeze([
     // 예: "앵커꼽 ID"
+    "EVE_ANCHOR_CHARIDS",
 ]);
 
 //--------------------------------------------------------
