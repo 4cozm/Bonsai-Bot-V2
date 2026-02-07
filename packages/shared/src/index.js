@@ -11,4 +11,5 @@ export { refreshEveToken } from "./esi/refreshEveToken.js";
 export { signState, verifyState } from "./esi/stateSign.js";
 export { pickDeferPhrase } from "./discord/pickDeferPhrase.js";
 export { logger } from "./utils/logger.js";
+export { postDiscordWebhook } from "./utils/postDiscordWebhook.js";
 export { sendDiscordWebhook } from "./utils/sendDiscordWebhook.js";
