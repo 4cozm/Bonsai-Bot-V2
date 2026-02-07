@@ -90,6 +90,7 @@ export const ENV_REQUIRED = Object.freeze({
  */
 export const WORKER_TENANT_REQUIRED = Object.freeze([
     // 예: "앵커꼽 ID"
+    "EVE_ANCHOR_CHARIDS",
 ]);
 
 //--------------------------------------------------------

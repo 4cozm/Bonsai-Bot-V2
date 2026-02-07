@@ -72,6 +72,11 @@ model EsiRegistration {
 
   status        RegStatus @default(PENDING)
 
+  // 콜백에서 받은 토큰(esi-complete에서 EveCharacter로 옮긴 후 null 처리)
+  accessToken   String?   @db.Text
+  refreshToken  String?   @db.Text
+  tokenExpiresAt DateTime?
+
   // 디스코드 응답 편의(예: editReply 대상)
   guildId       String?
   channelId     String?
