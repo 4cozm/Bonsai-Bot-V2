@@ -1,37 +1,25 @@
-// packages/worker/src/esi/getCorporationStructures.js
-import { logger } from "@bonsai/shared";
-
-const log = logger();
-const ESI_BASE = "https://esi.evetech.net/latest";
+const ESI_STRUCTURES_URL = "https://esi.evetech.net/latest/corporations";
 
 /**
- * EVE ESI corporations/{corporation_id}/structures/ 조회.
+ * ESI corporations/{corporationId}/structures 호출.
  *
- * @param {number} corporationId
- * @param {string} accessToken
- * @returns {Promise<Array<{ name: string, fuel_expires: string, type_id: number, [key: string]: unknown }> | null>}
+ * @param {string} accessToken - Bearer token
+ * @param {number} corporationId - EVE corporation ID
+ * @returns {Promise<object[] | null>} structures 배열 또는 실패 시 null
  */
-export async function getCorporationStructures(corporationId, accessToken) {
-    const url = `${ESI_BASE}/corporations/${corporationId}/structures/`;
+export async function getCorporationStructures(accessToken, corporationId) {
+    const token = String(accessToken ?? "").trim();
+    if (!token) return null;
+
+    const url = `${ESI_STRUCTURES_URL}/${corporationId}/structures/`;
     try {
         const res = await fetch(url, {
             method: "GET",
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-            },
+            headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) {
-            log.warn("[esi:structures] 조회 실패", {
-                corporationId,
-                status: res.status,
-                statusText: res.statusText,
-            });
-            return null;
-        }
-        const data = await res.json();
-        return Array.isArray(data) ? data : null;
-    } catch (err) {
-        log.warn("[esi:structures] 요청 오류", { corporationId, message: err?.message });
+        if (!res.ok) return null;
+        return await res.json();
+    } catch {
         return null;
     }
 }
