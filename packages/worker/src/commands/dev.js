@@ -5,11 +5,12 @@ const log = logger();
 
 /**
  * dev 커맨드 args 파싱
- * - 1순위: JSON({cmd,args})
+ * - 1순위: JSON({cmd, args, ephemeral})
  * - 2순위: raw string ("ping ..." 형태)
+ * - ephemeral: 미입력/true면 비공개(본인만 보기), false면 공개
  *
  * @param {string} raw
- * @returns {{cmd:string, args:string}}
+ * @returns {{cmd:string, args:string, ephemeral:boolean}}
  */
 export function parseDevArgs(raw) {
     const text = raw == null ? "" : String(raw).trim();
@@ -20,19 +21,20 @@ export function parseDevArgs(raw) {
             const obj = JSON.parse(text);
             const cmd = obj?.cmd == null ? "" : String(obj.cmd);
             const args = obj?.args == null ? "" : String(obj.args);
-            return { cmd, args };
+            const ephemeral = obj?.ephemeral !== false; // 미입력/true → 비공개
+            return { cmd, args, ephemeral };
         } catch {
             // fallthrough
         }
     }
 
-    // 2) fallback: 첫 토큰=cmd, 나머지=args
-    if (!text) return { cmd: "", args: "" };
+    // 2) fallback: 첫 토큰=cmd, 나머지=args (ephemeral 기본 true)
+    if (!text) return { cmd: "", args: "", ephemeral: true };
 
     const [first, ...rest] = text.split(/\s+/);
     const cmd = first == null ? "" : String(first);
     const args = rest.length > 0 ? rest.join(" ") : "";
-    return { cmd, args };
+    return { cmd, args, ephemeral: true };
 }
 
 export default {
@@ -54,6 +56,12 @@ export default {
                 description: "내부 cmd args (옵션)",
                 required: false,
             },
+            {
+                type: 5, // BOOLEAN
+                name: "ephemeral",
+                description: "응답 비공개(본인만 보기). 기본 비공개. 체크 해제 시 채널에 공개",
+                required: false,
+            },
         ],
     },
 
@@ -71,7 +79,7 @@ export default {
         const t = String(ctx?.tenantKey ?? "").trim();
         const envId = String(envelope?.id ?? "").trim();
 
-        const { cmd, args } = parseDevArgs(envelope.args);
+        const { cmd, args, ephemeral } = parseDevArgs(envelope.args);
 
         if (!cmd) {
             return { ok: false, data: { error: "dev: inner cmd가 비어있음" } };
@@ -98,6 +106,15 @@ export default {
         );
 
         const innerEnv = { ...envelope, cmd: cmd, args: args };
-        return await def.execute(ctx, innerEnv);
+        const res = await def.execute(ctx, innerEnv);
+        if (!res || typeof res !== "object") return res;
+        const addEphemeral = ephemeral === true;
+        const data =
+            res.data != null && typeof res.data === "object"
+                ? { ...res.data, ...(addEphemeral ? { ephemeralReply: true } : {}) }
+                : addEphemeral
+                  ? { ephemeralReply: true }
+                  : res.data;
+        return { ok: res.ok, data, meta: res.meta };
     },
 };

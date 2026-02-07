@@ -17,6 +17,7 @@ const log = logger();
  * @param {string} input.channelId
  * @param {string} input.cmd       // inner cmd
  * @param {string} [input.args]    // inner args
+ * @param {boolean} [input.ephemeral]  // true=비공개(기본), false=공개
  * @returns {Promise<{messageId: string, targetDev: string, tenantKey: string, envelopeId: string}>}
  */
 export async function publishDevCommand(input) {
@@ -25,6 +26,7 @@ export async function publishDevCommand(input) {
     const channelId = String(input.channelId ?? "");
     const innerCmd = String(input.cmd ?? "").trim();
     const innerArgs = input.args == null ? "" : String(input.args);
+    const ephemeral = input.ephemeral !== false;
 
     if (!discordUserId || !guildId || !channelId) throw new Error("필수 메타 누락");
     if (!innerCmd) throw new Error("dev inner cmd가 비어있음");
@@ -38,7 +40,7 @@ export async function publishDevCommand(input) {
     const envelope = buildCmdEnvelope({
         tenantKey,
         cmd: "dev",
-        args: JSON.stringify({ cmd: innerCmd, args: innerArgs }),
+        args: JSON.stringify({ cmd: innerCmd, args: innerArgs, ephemeral }),
         meta: { discordUserId, guildId, channelId },
     });
 

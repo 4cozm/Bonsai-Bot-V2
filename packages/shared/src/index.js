@@ -4,6 +4,7 @@ export { publishToGlobalCmdStream } from "./bus/publishToGlobalCmdStream.js";
 export { keySetsFor } from "./config/keys.js";
 export { getAccessTokenForCharacter } from "./esi/getAccessTokenForCharacter.js";
 export { loadEsiConfig } from "./esi/loadEsiConfig.js";
+export { parseAnchorCharIds } from "./esi/parseAnchorCharIds.js";
 export { parseEveEsiScope } from "./esi/parseEveEsiScope.js";
 export { consumeNonce, issueNonce } from "./esi/redisNonce.js";
 export { refreshEveToken } from "./esi/refreshEveToken.js";
