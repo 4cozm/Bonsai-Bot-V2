@@ -28,7 +28,7 @@ describe("shared/config/keys keySetsFor", () => {
         expect(out.sharedKeys).toContain("ESI_STATE_SECRET");
         expect(out.sharedKeys).toContain("EVE_ESI_CLIENT_ID");
         expect(out.sharedKeys).toContain("EVE_ESI_SCOPE");
-        expect(out.tenantKeys).toEqual([]);
+        expect(out.tenantKeys).toEqual(["EVE_ANCHOR_CHARIDS"]);
     });
 
     test("worker + isDev true → worker common만 추가, dev 전용 빈 배열", () => {
