@@ -16,6 +16,7 @@ describe("shared/esi/refreshEveToken", () => {
             clientSecret: "s",
         });
         expect(result).toBeNull();
+        expect(globalThis.fetch).not.toHaveBeenCalled?.();
     });
 
     test("refreshToken 공백만 → null", async () => {
