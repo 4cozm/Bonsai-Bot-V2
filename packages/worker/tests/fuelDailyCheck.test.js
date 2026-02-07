@@ -1,5 +1,5 @@
 // packages/worker/tests/fuelDailyCheck.test.js
-import { describe, expect, jest, test } from "@jest/globals";
+import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 
 const mockPostDiscordWebhook = jest.fn().mockResolvedValue(undefined);
 const mockGetAccessTokenForCharacter = jest.fn();

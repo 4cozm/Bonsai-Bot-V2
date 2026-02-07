@@ -47,7 +47,7 @@ export const checkStructureFuelPerDay = () => {
                     "연료 검사 완료! 현재 모든 건물의 연료가 안전 범위 입니다."
                 );
             }
-        } catch (error) {
+        } catch {
             await discordAlert("404", "연료 부족 알림 중 오류 발생");
         }
     });

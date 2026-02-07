@@ -1,5 +1,5 @@
 // packages/shared/tests/postDiscordWebhook.test.js
-import { describe, expect, jest, test } from "@jest/globals";
+import { afterEach, describe, expect, jest, test } from "@jest/globals";
 import { postDiscordWebhook } from "../src/utils/postDiscordWebhook.js";
 
 describe("shared/utils/postDiscordWebhook", () => {

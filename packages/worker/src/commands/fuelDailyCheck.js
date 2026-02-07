@@ -29,7 +29,6 @@ export default {
      */
     async execute(ctx, envelope) {
         const prisma = ctx?.prisma;
-        const tenantKey = String(ctx?.tenantKey ?? "").trim();
         const meta = envelope?.meta ?? {};
         const channelId = String(meta.channelId ?? "").trim();
         const guildId = String(meta.guildId ?? "").trim();

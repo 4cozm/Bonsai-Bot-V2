@@ -1,5 +1,5 @@
 // packages/worker/tests/fuel.test.js
-import { describe, expect, jest, test } from "@jest/globals";
+import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 
 const mockGetAccessTokenForCharacter = jest.fn();
 const mockGetCorporationStructures = jest.fn();
