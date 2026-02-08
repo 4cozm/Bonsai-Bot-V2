@@ -49,8 +49,8 @@ jobs:
                       npx prisma generate
                       echo "[CD] prisma migrate deploy..."
                       npx prisma migrate deploy
-                      echo "[CD] pm2 reload..."
-                      npx pm2 reload ./infra/pm2/ecosystem.config.cjs --env production
+                      echo "[CD] pm2 restart..."
+                      npx pm2 restart ./infra/pm2/ecosystem.config.cjs --env production
                       echo "[CD] pm2 save..."
                       npx pm2 save || true
                       echo "[CD] done."
