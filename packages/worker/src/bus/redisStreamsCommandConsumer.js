@@ -220,6 +220,8 @@ export async function runRedisStreamsCommandConsumer({
                         tenantKey: t,
                         cmd: envelope.cmd,
                         issuedAt: Math.floor(Date.now() / 1000),
+                        workerReceivedAtMs: receivedAtMs,
+                        workerFinishedAtMs: finishedAtMs,
                     };
                     const resMeta = res?.meta && typeof res.meta === "object" ? res.meta : {};
                     const resultEnv = buildResultEnvelope({
