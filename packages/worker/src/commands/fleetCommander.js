@@ -182,27 +182,11 @@ export default {
 
         log.debug(`[함대장변경] 3단계: boss characterId=${bossCharacterId}`);
 
-        // boss 이름 조회 (메시지용)
+        // boss 이름 조회 (에러 메시지용)
         let bossName = String(bossCharacterId);
         const names = await resolveNames([bossCharacterId]);
         if (names.length > 0) {
             bossName = names[0].name ?? bossName;
-        }
-        log.debug(`[함대장변경] boss 이름 조회 완료: ${bossName}`);
-
-        // 요청자가 이미 boss인 경우
-        if (String(bossCharacterId) === String(targetCharacterId)) {
-            return {
-                ok: true,
-                data: {
-                    embed: true,
-                    title: "함대장 변경",
-                    description: `**${targetCharacterName}** 은(는) 이미 함대장(Boss)입니다.`,
-                    color: 0xf1c40f, // 노랑 — 경고/알림
-                    timestamp: false,
-                },
-                meta: { broadcastToChannel: true, channelId, guildId },
-            };
         }
 
         // ── 4단계: boss가 봇 DB에 있는지 확인 ──
@@ -262,8 +246,28 @@ export default {
             `[함대장변경] 5-1단계: 현재 fleet_commander=${currentFC ? currentFC.character_id : "(없음)"}`
         );
 
+        // 요청자가 이미 fleet_commander인 경우 → 변경 불필요
+        if (currentFC && String(currentFC.character_id) === String(targetCharacterId)) {
+            return {
+                ok: true,
+                data: {
+                    embed: true,
+                    title: "함대장 변경",
+                    description: `**${targetCharacterName}** 은(는) 이미 Fleet Commander입니다.`,
+                    color: 0xf1c40f, // 노랑 — 경고/알림
+                    timestamp: false,
+                },
+                meta: { broadcastToChannel: true, channelId, guildId },
+            };
+        }
+
         // ── 5-2단계: fleet_commander 자리에 다른 사람이 있으면 먼저 내리기 ──
-        if (currentFC && String(currentFC.character_id) !== String(targetCharacterId)) {
+        // 현재 FC 이름 조회 (성공 메시지용)
+        let previousFCName = "(없음)";
+        if (currentFC) {
+            const fcNames = await resolveNames([currentFC.character_id]);
+            previousFCName = fcNames[0]?.name ?? String(currentFC.character_id);
+
             // 요청자의 현재 squad/wing 정보를 사용해서 기존 FC를 그 자리로 이동
             const demoteBody = {
                 role: "squad_member",
@@ -331,10 +335,10 @@ export default {
             data: {
                 embed: true,
                 title: "✅ 함대장 변경 완료",
-                description: `**${targetCharacterName}**을(를) 함대장으로 변경했습니다.`,
+                description: `**${targetCharacterName}**을(를) Fleet Commander로 변경했습니다.`,
                 fields: [
-                    { name: "새 함대장", value: targetCharacterName, inline: true },
-                    { name: "이전 함대장", value: bossName, inline: true },
+                    { name: "새 FC", value: targetCharacterName, inline: true },
+                    { name: "이전 FC", value: previousFCName, inline: true },
                     { name: "Fleet ID", value: String(fleetId), inline: true },
                 ],
                 color: 0x2ecc71, // 초록 — 성공
