@@ -99,6 +99,9 @@ export default {
         }
 
         const ephemeral = args?.ephemeral !== false;
+        const meta = envelope?.meta ?? {};
+        const channelId = String(meta.channelId ?? "").trim();
+        const guildId = String(meta.guildId ?? "").trim();
 
         const typeRaw = String(args?.type ?? "")
             .trim()
@@ -257,7 +260,8 @@ export default {
             },
         ];
 
-        return {
+        // 사용자가 "보이기" 선택(ephemeral false)이면 채널 브로드캐스트로 전달. Master는 editReply 대신 채널에 메시지 전송 후 "결과를 채널에 공개했습니다."로 editReply.
+        const result = {
             ok: true,
             data: {
                 embed: true,
@@ -268,5 +272,9 @@ export default {
                 ephemeralReply: ephemeral,
             },
         };
+        if (ephemeral === false && channelId) {
+            result.meta = { broadcastToChannel: true, channelId, guildId };
+        }
+        return result;
     },
 };

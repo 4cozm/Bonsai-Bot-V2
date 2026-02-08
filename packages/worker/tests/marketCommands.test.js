@@ -84,4 +84,22 @@ describe("worker/commands 시세 (marketPrice) 정상 시 embed 구조·ephemera
         expect(out.ok).toBe(true);
         expect(out.data.ephemeralReply).toBe(false);
     });
+
+    test("ephemeral false + meta.channelId → meta.broadcastToChannel 반환 (Master가 채널 브로드캐스트)", async () => {
+        const ctx = { redis: {}, tenantKey: "global" };
+        const envelope = {
+            args: '{"type":"mineral","hub":"jita","ephemeral":false}',
+            meta: { channelId: "123", guildId: "456" },
+        };
+
+        const out = await marketPrice.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        expect(out.data.ephemeralReply).toBe(false);
+        expect(out.meta).toEqual({
+            broadcastToChannel: true,
+            channelId: "123",
+            guildId: "456",
+        });
+    });
 });
