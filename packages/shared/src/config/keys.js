@@ -73,6 +73,7 @@ export const ENV_REQUIRED = Object.freeze({
         ]),
         dev: Object.freeze([]),
         prod: Object.freeze([
+            "DISCORD_TENANT_MAP",
             "DISCORD_DT_WEBHOOK_URL",
             "DISCORD_IT_PING_WEBHOOK_URL",
             "DISCORD_ALERT_WEBHOOK_URL",
@@ -86,7 +87,8 @@ export const ENV_REQUIRED = Object.freeze({
 });
 
 /**
- * 테넌트 prefix가 필요한 키 (tenant마다 값이 달라지는 것만)
+ * 테넌트 워커 전용 — 테넌트 prefix가 필요한 키 (tenant마다 값이 달라지는 것만).
+ * global 워커는 사용하지 않음 (keySetsFor에서 role=worker일 때만 tenantKeys에 포함).
  * - CAT-*, FISH-* 로 KeyVault에 저장
  */
 export const WORKER_TENANT_REQUIRED = Object.freeze([
