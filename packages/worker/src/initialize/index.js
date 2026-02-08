@@ -43,21 +43,23 @@ export async function initializeWorker(opts = {}) {
     const isDev = isDevMode();
     const vaultUrl = isDev ? VAULT_URL_DEV : VAULT_URL_PROD;
 
-    const { sharedKeys, tenantKeys } = keySetsFor({ role: "worker", isDev });
-
-    await loadVaultSecrets({
-        vaultUrl,
-        sharedKeys,
-        tenantKeys,
-        tenant: process.env.TENANT,
-        log,
-    });
-
     const tenantKey = String(process.env.TENANT ?? "").trim();
     if (!tenantKey) {
         log.error("[worker:init] TENANT가 비어있음");
         throw new Error("TENANT가 비어있음");
     }
+
+    const { sharedKeys, tenantKeys: roleTenantKeys } = keySetsFor({ role: "worker", isDev });
+    // global 워커는 WORKER_TENANT_REQUIRED(EVE_ANCHOR_CHARIDS 등) 미사용 — tenant 전용 키 로드 생략
+    const tenantKeys = tenantKey.toLowerCase() === "global" ? [] : roleTenantKeys;
+
+    await loadVaultSecrets({
+        vaultUrl,
+        sharedKeys,
+        tenantKeys,
+        tenant: tenantKey,
+        log,
+    });
 
     log.info(
         `[worker:init] vault ok isDev=${isDev} tenant=${tenantKey} sharedKeys=${sharedKeys.length} tenantKeys=${tenantKeys.length}`
