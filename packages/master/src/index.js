@@ -4,3 +4,4 @@ export { routeInteraction } from "./discord/interactionRouter.js";
 export { initializeMaster } from "./initialize/index.js";
 export { startDevBridge } from "./initialize/startDevBridge.js";
 export { startProdBridge } from "./initialize/startProdBridge.js";
+export { handleAutocomplete } from "./usecases/handleAutocomplete.js";

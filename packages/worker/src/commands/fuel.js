@@ -142,7 +142,7 @@ export default {
                 .map((row) => {
                     const d = row.remainingDays;
                     const statusEmoji = d <= 0 ? "⚫" : d <= 10 ? "🔴" : d <= 30 ? "🟡" : "🟢";
-                    const daysText = d <= 0 ? "0일 남음" : `${d}일 남음`;
+                    const daysText = d <= 0 ? "뒤짐" : `${d}일`;
                     return `${statusEmoji} ${daysText}`;
                 })
                 .join("\n") || "정보 없음";
