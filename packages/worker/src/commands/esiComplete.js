@@ -64,25 +64,6 @@ export default {
             };
         }
 
-        const hasRegToken =
-            reg.accessToken != null && reg.refreshToken != null && reg.tokenExpiresAt != null;
-        log.debug("[cmd:esi-complete] 등록 조회", {
-            registrationId,
-            characterId: String(reg.characterId),
-            hasAccessToken: reg.accessToken != null,
-            hasRefreshToken: reg.refreshToken != null,
-            hasTokenExpiresAt: reg.tokenExpiresAt != null,
-        });
-        if (!hasRegToken) {
-            log.warn(
-                "[cmd:esi-complete] 등록에 토큰 없음 — EveCharacter에 accessToken/refreshToken 없이 저장됨, 연료 등 토큰 필요 기능 사용 불가",
-                {
-                    registrationId,
-                    characterId: String(reg.characterId),
-                }
-            );
-        }
-
         const isMainCandidate = Boolean(reg.mainCandidate);
 
         const existedBefore = await prisma.eveCharacter.findUnique({

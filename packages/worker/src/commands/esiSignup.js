@@ -126,12 +126,6 @@ export default {
             state: stateStr,
         });
         const authorizeUrl = `${EVE_AUTHORIZE_URL}?${params.toString()}`;
-        log.debug("[cmd:esi-signup] authorize URL 생성", {
-            urlBase: EVE_AUTHORIZE_URL,
-            redirect_uri: redirectUri,
-            scopeLen: scope?.length ?? 0,
-            clientIdLen: clientId?.length ?? 0,
-        });
 
         log.info(
             `[cmd:esi-signup] 링크 발급 완료 tenant=${tenantKey} discordId=${discordUserId} stateNonce=${stateNonce}`

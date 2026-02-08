@@ -15,11 +15,6 @@ export async function getCorporationStructures(accessToken, corporationId) {
     if (!token) return null;
 
     const url = `${ESI_STRUCTURES_URL}/${corporationId}/structures/`;
-    log.debug("[esi:structures] 요청", {
-        url,
-        corporationId,
-        accessTokenPreview: token ? `${token.slice(0, 8)}…(len=${token.length})` : "(empty)",
-    });
 
     try {
         const res = await fetch(url, {
@@ -42,13 +37,6 @@ export async function getCorporationStructures(accessToken, corporationId) {
         } catch {
             result = [];
         }
-        log.debug("[esi:structures] 반환", {
-            url,
-            corporationId,
-            status: res.status,
-            resultLength: Array.isArray(result) ? result.length : 0,
-            result: Array.isArray(result) ? result : result,
-        });
         return result;
     } catch (err) {
         log.warn("[esi:structures] fetch 예외", {
