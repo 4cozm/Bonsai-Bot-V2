@@ -2,6 +2,7 @@ import { createRedisClient, loadVaultSecrets } from "@bonsai/external";
 import { keySetsFor, loadEsiConfig, logger } from "@bonsai/shared";
 import { disconnectPrisma } from "@bonsai/shared/db";
 import dotenv from "dotenv";
+import { runAutocompleteConsumer } from "../bus/autocompleteConsumer.js";
 import { runRedisStreamsCommandConsumer } from "../bus/redisStreamsCommandConsumer.js";
 import { ensureTenantDbAndMigrate, getPrisma } from "../db/prisma.js";
 
@@ -118,6 +119,16 @@ export async function initializeWorker(opts = {}) {
 
     process.on("SIGINT", () => shutdown("SIGINT"));
     process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+    // Autocomplete fast-path consumer (tenant 전용; global 워커는 DB가 없으므로 제외)
+    if (tenantKey !== "global") {
+        runAutocompleteConsumer({
+            redis,
+            prisma,
+            tenantKey,
+            signal: ac.signal,
+        }).catch((err) => log.warn("[worker:init] autocomplete consumer 비정상 종료", err));
+    }
 
     await runRedisStreamsCommandConsumer({
         redis,
