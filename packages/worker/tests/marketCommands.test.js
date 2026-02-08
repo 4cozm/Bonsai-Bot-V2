@@ -75,9 +75,9 @@ describe("worker/commands 시세 (marketPrice) 정상 시 embed 구조·ephemera
         embed.fields.forEach((f) => expect(f.inline).toBe(true));
     });
 
-    test("ephemeral false → data.ephemeralReply false", async () => {
+    test("visibility public → data.ephemeralReply false", async () => {
         const ctx = { redis: {}, tenantKey: "global" };
-        const envelope = { args: '{"type":"mineral","hub":"jita","ephemeral":false}' };
+        const envelope = { args: '{"type":"mineral","hub":"jita","visibility":"public"}' };
 
         const out = await marketPrice.execute(ctx, envelope);
 
@@ -85,10 +85,10 @@ describe("worker/commands 시세 (marketPrice) 정상 시 embed 구조·ephemera
         expect(out.data.ephemeralReply).toBe(false);
     });
 
-    test("ephemeral false + meta.channelId → meta.broadcastToChannel 반환 (Master가 채널 브로드캐스트)", async () => {
+    test("visibility public + meta.channelId → meta.broadcastToChannel 반환 (Master가 채널 브로드캐스트)", async () => {
         const ctx = { redis: {}, tenantKey: "global" };
         const envelope = {
-            args: '{"type":"mineral","hub":"jita","ephemeral":false}',
+            args: '{"type":"mineral","hub":"jita","visibility":"public"}',
             meta: { channelId: "123", guildId: "456" },
         };
 

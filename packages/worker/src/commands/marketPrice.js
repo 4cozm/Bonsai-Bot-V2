@@ -67,10 +67,14 @@ export default {
                 choices: [...HUB_CHOICES],
             },
             {
-                name: "ephemeral",
-                description: "본인만 보기 (기본: 켜짐)",
-                type: 5,
+                name: "visibility",
+                description: "공개: 공개하기 | 비공개 (기본값)",
+                type: 3,
                 required: false,
+                choices: [
+                    { name: "비공개 (기본값)", value: "private" },
+                    { name: "공개하기", value: "public" },
+                ],
             },
         ],
     },
@@ -98,7 +102,8 @@ export default {
             // ignore
         }
 
-        const ephemeral = args?.ephemeral !== false;
+        const isPublic = args?.visibility === "public";
+        const ephemeral = !isPublic;
         const meta = envelope?.meta ?? {};
         const channelId = String(meta.channelId ?? "").trim();
         const guildId = String(meta.guildId ?? "").trim();

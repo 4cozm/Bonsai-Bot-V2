@@ -57,18 +57,23 @@ describe("e2e / 연료 (fuel)", () => {
         expect(payload.embeds?.length > 0 || payload.content).toBeTruthy();
     });
 
-    test("args.ephemeral false → data.ephemeralReply false", async () => {
+    test("args.visibility public → data.ephemeralReply false + meta.broadcastToChannel", async () => {
         const ctx = { prisma: {}, redis: null, tenantKey: "CAT" };
         const envelope = {
             id: "env-2",
             cmd: "연료",
             meta: { discordUserId: "u1", guildId: "g1", channelId: "ch1" },
-            args: '{"ephemeral":false}',
+            args: '{"visibility":"public"}',
         };
 
         const result = await fuelCmd.execute(ctx, envelope);
 
         expect(result.ok).toBe(true);
         expect(result.data.ephemeralReply).toBe(false);
+        expect(result.meta).toEqual({
+            broadcastToChannel: true,
+            channelId: "ch1",
+            guildId: "g1",
+        });
     });
 });
