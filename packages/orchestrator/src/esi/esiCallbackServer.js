@@ -79,8 +79,23 @@ async function handleCallback(url, deps) {
         clientSecret,
     });
     if (!tokenResult) {
+        log.warn("[esi:callback] 토큰 교환 실패 (exchangeEveCode null)");
         return { statusCode: 400, body: "Token exchange failed" };
     }
+    if (tokenResult.refresh_token == null || String(tokenResult.refresh_token).trim() === "") {
+        log.warn(
+            "[esi:callback] refresh_token 없음 — EsiRegistration에 토큰 저장해도 esi-complete에서 EveCharacter에 토큰 미저장됨",
+            {
+                tenantKey,
+                stateNonce: payload.stateNonce,
+            }
+        );
+    }
+    log.debug("[esi:callback] 토큰 교환 성공", {
+        tenantKey,
+        hasAccessToken: !!tokenResult.access_token,
+        hasRefreshToken: !!tokenResult.refresh_token,
+    });
 
     const charInfo = decodeEveJwtPayload(tokenResult.access_token);
     if (!charInfo) {
@@ -118,6 +133,12 @@ async function handleCallback(url, deps) {
             refreshToken: tokenResult.refresh_token ?? null,
             tokenExpiresAt,
         },
+    });
+    log.debug("[esi:callback] EsiRegistration 업데이트 완료", {
+        registrationId: reg.id,
+        characterId: String(charInfo.characterId),
+        hasAccessToken: !!tokenResult.access_token,
+        hasRefreshToken: !!(tokenResult.refresh_token ?? null),
     });
 
     const channelId = String(reg.channelId ?? payload.channelId ?? "").trim();
