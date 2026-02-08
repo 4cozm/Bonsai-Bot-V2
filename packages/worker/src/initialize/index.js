@@ -69,6 +69,8 @@ export async function initializeWorker(opts = {}) {
     loadEsiConfig();
 
     const redis = await createRedisClient();
+    // Autocomplete 전용 Redis 클라이언트 (XREAD BLOCK와 분리 — 블로킹 방지)
+    const acRedis = tenantKey !== "global" ? await createRedisClient() : null;
     // 전역 워커(시세 등)는 DB 미사용; Tenant만 DB 생성/마이그레이션
     let prisma = null;
     if (tenantKey !== "global") {
@@ -107,6 +109,13 @@ export async function initializeWorker(opts = {}) {
         } catch {
             //무시
         }
+        if (acRedis) {
+            try {
+                await acRedis.quit();
+            } catch {
+                //무시
+            }
+        }
         if (tenantKey !== "global") {
             try {
                 await disconnectPrisma(tenantKey);
@@ -121,9 +130,10 @@ export async function initializeWorker(opts = {}) {
     process.on("SIGTERM", () => shutdown("SIGTERM"));
 
     // Autocomplete fast-path consumer (tenant 전용; global 워커는 DB가 없으므로 제외)
-    if (tenantKey !== "global") {
+    // acRedis: XREAD BLOCK(command consumer)와 분리 — BLPOP/SET 블로킹 방지
+    if (tenantKey !== "global" && acRedis) {
         runAutocompleteConsumer({
-            redis,
+            redis: acRedis,
             prisma,
             tenantKey,
             signal: ac.signal,
