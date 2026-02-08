@@ -6,15 +6,13 @@
 //   - esi-fleets.read_fleet.v1   (GET /characters/{id}/fleet, GET /fleets/{id}/members)
 //   - esi-fleets.write_fleet.v1  (PUT /fleets/{id}/members/{id})
 //
-import { getAccessTokenForCharacter, logger } from "@bonsai/shared";
+import { getAccessTokenForCharacter } from "@bonsai/shared";
 import {
     getCharacterFleet,
     getFleetMembers,
     resolveNames,
     setFleetMemberRole,
 } from "../esi/fleet.js";
-
-const log = logger();
 
 export default {
     name: "함대장변경",
@@ -129,10 +127,6 @@ export default {
 
             targetCharacterId = String(mainChar.characterId);
             targetCharacterName = mainChar.characterName;
-            log.debug(
-                `[함대장변경] 대표 캐릭터 기본값 사용 discordUserId=${discordUserId} ` +
-                    `characterId=${targetCharacterId} name=${targetCharacterName}`
-            );
         } else {
             // autocomplete에서 선택한 값(characterId)으로 이름도 조회
             const selectedChar = await prisma.eveCharacter.findFirst({
@@ -141,8 +135,6 @@ export default {
             });
             targetCharacterName = selectedChar?.characterName ?? targetCharacterId;
         }
-
-        log.debug(`[함대장변경] 1단계 완료: 요청자=${targetCharacterName}(${targetCharacterId})`);
 
         // ── 2단계: 요청자 토큰 확보 + fleet 조회 ──
         const requesterToken = await getAccessTokenForCharacter(prisma, targetCharacterId);
@@ -154,7 +146,6 @@ export default {
                 },
             };
         }
-        log.debug(`[함대장변경] 2단계: 요청자 토큰 확보 완료`);
 
         const fleetInfo = await getCharacterFleet(requesterToken, targetCharacterId);
         if (!fleetInfo || !fleetInfo.fleet_id) {
@@ -168,9 +159,6 @@ export default {
 
         const fleetId = fleetInfo.fleet_id;
         const bossCharacterId = fleetInfo.fleet_boss_id;
-        log.debug(
-            `[함대장변경] 2단계 완료: fleet_id=${fleetId} role=${fleetInfo.role} fleet_boss_id=${bossCharacterId}`
-        );
 
         // ── 3단계: boss 식별 (fleet_boss_id로 직접 확보) ──
         if (!bossCharacterId) {
@@ -179,8 +167,6 @@ export default {
                 data: { error: "플릿에서 Boss를 식별할 수 없습니다 (fleet_boss_id 없음)." },
             };
         }
-
-        log.debug(`[함대장변경] 3단계: boss characterId=${bossCharacterId}`);
 
         // boss 이름 조회 (에러 메시지용)
         let bossName = String(bossCharacterId);
@@ -211,8 +197,6 @@ export default {
             };
         }
 
-        log.debug(`[함대장변경] 4단계 완료: boss "${bossName}" DB 확인 OK`);
-
         // ── 5단계: boss 토큰으로 요청자를 fleet_commander로 승격 ──
         const bossToken = await getAccessTokenForCharacter(prisma, bossCharacterId);
         if (!bossToken) {
@@ -226,8 +210,6 @@ export default {
             };
         }
 
-        log.debug(`[함대장변경] 5단계: boss 토큰 확보 완료`);
-
         // ── 5-1단계: 멤버 조회 → 현재 fleet_commander 확인 ──
         const members = await getFleetMembers(bossToken, fleetId);
         if (!members) {
@@ -239,12 +221,7 @@ export default {
             };
         }
 
-        log.debug(`[함대장변경] 5-1단계: 멤버 ${members.length}명 조회 완료`);
-
         const currentFC = members.find((m) => m.role === "fleet_commander");
-        log.debug(
-            `[함대장변경] 5-1단계: 현재 fleet_commander=${currentFC ? currentFC.character_id : "(없음)"}`
-        );
 
         // 요청자가 이미 fleet_commander인 경우 → 변경 불필요
         if (currentFC && String(currentFC.character_id) === String(targetCharacterId)) {
@@ -275,21 +252,11 @@ export default {
                 wing_id: fleetInfo.wing_id ?? 0,
             };
 
-            log.debug(
-                `[함대장변경] 5-2단계: 기존 FC(${currentFC.character_id}) 강등 시작 → ` +
-                    `squad_member (wing=${demoteBody.wing_id}, squad=${demoteBody.squad_id})`
-            );
-
             const demoteResult = await setFleetMemberRole(
                 bossToken,
                 fleetId,
                 currentFC.character_id,
                 demoteBody
-            );
-
-            log.debug(
-                `[함대장변경] 5-2단계 강등 결과: ok=${demoteResult.ok} status=${demoteResult.status}` +
-                    (demoteResult.error ? ` error=${demoteResult.error}` : "")
             );
 
             if (!demoteResult.ok) {
@@ -305,16 +272,9 @@ export default {
         }
 
         // ── 5-3단계: 요청자를 fleet_commander로 승격 ──
-        log.debug(`[함대장변경] 5-3단계: PUT fleet_commander 시작`);
-
         const putResult = await setFleetMemberRole(bossToken, fleetId, targetCharacterId, {
             role: "fleet_commander",
         });
-
-        log.debug(
-            `[함대장변경] 5-3단계 PUT 결과: ok=${putResult.ok} status=${putResult.status}` +
-                (putResult.error ? ` error=${putResult.error}` : "")
-        );
 
         if (!putResult.ok) {
             return {
@@ -328,8 +288,6 @@ export default {
         }
 
         // ── 6단계: 성공 ──
-        log.debug(`[함대장변경] 6단계: 성공!`);
-
         return {
             ok: true,
             data: {
@@ -342,7 +300,7 @@ export default {
                     { name: "Fleet ID", value: String(fleetId), inline: true },
                 ],
                 color: 0x2ecc71, // 초록 — 성공
-                footer: `요청자: <@${targetCharacterName}>`,
+                footer: `요청자: <@${discordUserId}>`,
             },
             meta: { broadcastToChannel: true, channelId, guildId },
         };

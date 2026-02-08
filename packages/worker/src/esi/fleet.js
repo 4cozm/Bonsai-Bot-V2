@@ -25,18 +25,12 @@ export async function getCharacterFleet(accessToken, characterId) {
     const cid = String(characterId);
     const url = `${ESI_BASE}/characters/${cid}/fleet/`;
 
-    log.debug(`[esi:fleet] GET ${url}`);
-
     try {
         const res = await fetch(url, {
             method: "GET",
             headers: { Authorization: `Bearer ${accessToken}` },
         });
         const bodyText = await res.text();
-
-        log.debug(
-            `[esi:fleet] getCharacterFleet status=${res.status} body=${bodyText.slice(0, 500)}`
-        );
 
         if (res.status === 404) {
             // 플릿에 참가하지 않은 상태
@@ -73,18 +67,12 @@ export async function getFleetMembers(accessToken, fleetId) {
     const fid = String(fleetId);
     const url = `${ESI_BASE}/fleets/${fid}/members/`;
 
-    log.debug(`[esi:fleet] GET ${url}`);
-
     try {
         const res = await fetch(url, {
             method: "GET",
             headers: { Authorization: `Bearer ${accessToken}` },
         });
         const bodyText = await res.text();
-
-        log.debug(
-            `[esi:fleet] getFleetMembers status=${res.status} body=${bodyText.slice(0, 800)}`
-        );
 
         if (!res.ok) {
             log.warn("[esi:fleet] getFleetMembers 실패", {
@@ -115,10 +103,6 @@ export function findBoss(members) {
     const boss = members.find((m) => String(m.role_name ?? "").includes("(Boss)"));
     if (!boss) return null;
 
-    log.debug(
-        `[esi:fleet] findBoss hit character_id=${boss.character_id} role_name=${boss.role_name}`
-    );
-
     return {
         bossCharacterId: boss.character_id,
         bossRole: boss.role,
@@ -144,8 +128,6 @@ export async function setFleetMemberRole(bossAccessToken, fleetId, memberId, bod
     const mid = String(memberId);
     const url = `${ESI_BASE}/fleets/${fid}/members/${mid}/`;
 
-    log.debug(`[esi:fleet] PUT ${url} body=${JSON.stringify(body)}`);
-
     try {
         const res = await fetch(url, {
             method: "PUT",
@@ -157,10 +139,6 @@ export async function setFleetMemberRole(bossAccessToken, fleetId, memberId, bod
         });
 
         const bodyText = await res.text();
-
-        log.debug(
-            `[esi:fleet] setFleetMemberRole status=${res.status} body=${bodyText.slice(0, 500)}`
-        );
 
         if (res.status === 204 || res.ok) {
             return { ok: true, status: res.status };
@@ -195,8 +173,6 @@ export async function resolveNames(ids) {
     if (!Array.isArray(ids) || ids.length === 0) return [];
     const url = `${ESI_BASE}/universe/names/`;
 
-    log.debug(`[esi:fleet] POST ${url} ids=${JSON.stringify(ids)}`);
-
     try {
         const res = await fetch(url, {
             method: "POST",
@@ -204,8 +180,6 @@ export async function resolveNames(ids) {
             body: JSON.stringify(ids.map(Number)),
         });
         const bodyText = await res.text();
-
-        log.debug(`[esi:fleet] resolveNames status=${res.status} body=${bodyText.slice(0, 500)}`);
 
         if (!res.ok) {
             log.warn("[esi:fleet] resolveNames 실패", {
