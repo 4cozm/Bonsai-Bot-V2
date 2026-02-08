@@ -133,6 +133,7 @@ async function startSqsResultPolling({ pendingMap, signal } = {}) {
 
 /**
  * resultEnv를 pendingMap과 매칭해 Discord 응답을 닫거나, 채널 브로드캐스트로 전송한다.
+ * (경계 E2E 테스트에서 재사용하기 위해 export)
  *
  * @param {object} params
  * @param {any} params.resultEnv
@@ -140,8 +141,12 @@ async function startSqsResultPolling({ pendingMap, signal } = {}) {
  * @param {"redis"|"sqs"} params.source
  * @returns {Promise<boolean>} handled
  */
-async function handleResult({ resultEnv, pendingMap, source }) {
+export async function handleResult({ resultEnv, pendingMap, source }) {
+    if (resultEnv && typeof resultEnv.meta === "object") {
+        resultEnv.meta.masterResultReceivedAtMs = Date.now();
+    }
     const meta = resultEnv?.meta ?? {};
+    let didBroadcast = false;
     const broadcastToChannel = Boolean(meta.broadcastToChannel);
     const channelId = String(meta.channelId ?? "").trim();
 
@@ -153,43 +158,45 @@ async function handleResult({ resultEnv, pendingMap, source }) {
                 guildId,
                 allowed: DEFAULT_GUILD_ID,
             });
-            return true;
-        }
-        const ok = Boolean(resultEnv?.ok);
-        const data = resultEnv?.data ?? null;
-        const token = String(process.env.DISCORD_TOKEN ?? "").trim();
-        if (!token) {
-            log.warn("[prodBridge] 채널 브로드캐스트 실패: DISCORD_TOKEN 없음");
-            return true;
-        }
-        const payload = buildDiscordReplyPayload(ok ? data : { message: safeStringify(data) });
-        const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
-        try {
-            const res = await fetch(url, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bot ${token}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(payload),
-            });
-            if (!res.ok) {
-                const text = await res.text();
-                log.error("[prodBridge] 채널 브로드캐스트 실패", {
-                    status: res.status,
-                    body: text,
-                    channelId,
-                    guildId: guildId || DEFAULT_GUILD_ID,
-                });
+        } else {
+            const ok = Boolean(resultEnv?.ok);
+            const data = resultEnv?.data ?? null;
+            const token = String(process.env.DISCORD_TOKEN ?? "").trim();
+            if (!token) {
+                log.warn("[prodBridge] 채널 브로드캐스트 실패: DISCORD_TOKEN 없음");
             } else {
-                log.info(
-                    `[prodBridge] 채널 브로드캐스트 완료 source=${source} channelId=${channelId} guildId=${guildId || DEFAULT_GUILD_ID}`
+                const payload = buildDiscordReplyPayload(
+                    ok ? data : { message: safeStringify(data) }
                 );
+                const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
+                try {
+                    const res = await fetch(url, {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bot ${token}`,
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    if (!res.ok) {
+                        const text = await res.text();
+                        log.error("[prodBridge] 채널 브로드캐스트 실패", {
+                            status: res.status,
+                            body: text,
+                            channelId,
+                            guildId: guildId || DEFAULT_GUILD_ID,
+                        });
+                    } else {
+                        didBroadcast = true;
+                        log.info(
+                            `[prodBridge] 채널 브로드캐스트 완료 source=${source} channelId=${channelId} guildId=${guildId || DEFAULT_GUILD_ID}`
+                        );
+                    }
+                } catch (err) {
+                    log.error("[prodBridge] 채널 브로드캐스트 요청 실패", err);
+                }
             }
-        } catch (err) {
-            log.error("[prodBridge] 채널 브로드캐스트 요청 실패", err);
         }
-        return true;
     }
 
     const inReplyTo = String(resultEnv?.inReplyTo ?? "").trim();
@@ -221,36 +228,50 @@ async function handleResult({ resultEnv, pendingMap, source }) {
         const payload = { content: `❌ 처리 실패\n${safeStringify(data)}` };
         if (replyFlags != null) payload.flags = replyFlags;
         await interaction.editReply(payload);
+        if (resultEnv && typeof resultEnv.meta === "object") {
+            resultEnv.meta.masterDeliveryDoneAtMs = Date.now();
+        }
         return true;
     }
 
-    const render = buildDiscordReplyPayload(data);
-    if (replyFlags != null) {
-        render.flags = replyFlags;
-    }
-    await interaction.editReply(render);
+    if (didBroadcast) {
+        await interaction.editReply({ content: "결과를 채널에 공개했습니다." });
+    } else {
+        const render = buildDiscordReplyPayload(data);
+        if (replyFlags != null) {
+            render.flags = replyFlags;
+        }
+        await interaction.editReply(render);
 
-    const rawEphemeral =
-        data != null && typeof data.ephemeral === "string" ? data.ephemeral.trim() : "";
-    const ephemeralContent =
-        rawEphemeral.length > 2000 ? `${rawEphemeral.slice(0, 1997)}…` : rawEphemeral;
-    if (ephemeralContent) {
-        try {
-            await interaction.followUp({ content: ephemeralContent, flags: 64 });
-        } catch (err) {
-            const errMsg = err?.message ?? String(err);
-            log.warn(`[prodBridge] 비공개 메시지 전송 실패 inReplyTo=${inReplyTo} err=${errMsg}`);
+        const rawEphemeral =
+            data != null && typeof data.ephemeral === "string" ? data.ephemeral.trim() : "";
+        const ephemeralContent =
+            rawEphemeral.length > 2000 ? `${rawEphemeral.slice(0, 1997)}…` : rawEphemeral;
+        if (ephemeralContent) {
             try {
-                await interaction.followUp({
-                    content: `⚠️ 비공개 메시지(링크) 전송에 실패했습니다. 관리자에게 문의해 주세요. (${errMsg.slice(0, 200)})`,
-                    flags: 64,
-                });
-            } catch (e) {
-                log.error(`[prodBridge] 실패 안내 비공개 전송도 실패: ${e?.message ?? String(e)}`);
+                await interaction.followUp({ content: ephemeralContent, flags: 64 });
+            } catch (err) {
+                const errMsg = err?.message ?? String(err);
+                log.warn(
+                    `[prodBridge] 비공개 메시지 전송 실패 inReplyTo=${inReplyTo} err=${errMsg}`
+                );
+                try {
+                    await interaction.followUp({
+                        content: `⚠️ 비공개 메시지(링크) 전송에 실패했습니다. 관리자에게 문의해 주세요. (${errMsg.slice(0, 200)})`,
+                        flags: 64,
+                    });
+                } catch (e) {
+                    log.error(
+                        `[prodBridge] 실패 안내 비공개 전송도 실패: ${e?.message ?? String(e)}`
+                    );
+                }
             }
         }
     }
 
+    if (resultEnv && typeof resultEnv.meta === "object") {
+        resultEnv.meta.masterDeliveryDoneAtMs = Date.now();
+    }
     log.info(`[prodBridge] Discord 응답 완료 source=${source} inReplyTo=${inReplyTo} ok=${ok}`);
     return true;
 }

@@ -93,7 +93,7 @@ export default {
                 });
                 continue;
             }
-            const list = await getCorporationStructures(corporationId, accessToken);
+            const list = await getCorporationStructures(accessToken, corporationId);
             if (list && list.length > 0) {
                 allStructures.push(...list);
             }

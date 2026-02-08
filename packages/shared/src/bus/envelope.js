@@ -19,6 +19,8 @@ const log = logger();
  * @param {string} input.meta.channelId
  * @param {number} [input.meta.issuedAt] - epoch seconds
  * @param {string} [input.meta.discordNick] - ESI 가입 등 요청 시점 디스코드 표시명
+ * @param {number} [input.meta.discordReceivedAtMs] - Discord 인터랙션 수신 시각(ms, 매트릭용)
+ * @param {number} [input.meta.masterPublishedAtMs] - Master 발행 완료 시각(ms, 매트릭용)
  * @param {object} [input.replyTo]
  * @returns {object} envelope
  */
@@ -39,6 +41,18 @@ export function buildCmdEnvelope(input) {
     };
     if (metaRaw.discordNick != null && String(metaRaw.discordNick).trim() !== "") {
         meta.discordNick = String(metaRaw.discordNick).trim();
+    }
+    if (
+        typeof metaRaw.discordReceivedAtMs === "number" &&
+        Number.isFinite(metaRaw.discordReceivedAtMs)
+    ) {
+        meta.discordReceivedAtMs = metaRaw.discordReceivedAtMs;
+    }
+    if (
+        typeof metaRaw.masterPublishedAtMs === "number" &&
+        Number.isFinite(metaRaw.masterPublishedAtMs)
+    ) {
+        meta.masterPublishedAtMs = metaRaw.masterPublishedAtMs;
     }
 
     if (!tenantKey) {

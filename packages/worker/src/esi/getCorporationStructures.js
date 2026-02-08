@@ -1,3 +1,6 @@
+import { logger } from "@bonsai/shared";
+
+const log = logger();
 const ESI_STRUCTURES_URL = "https://esi.evetech.net/latest/corporations";
 
 /**
@@ -17,9 +20,22 @@ export async function getCorporationStructures(accessToken, corporationId) {
             method: "GET",
             headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+            const body = await res.text();
+            log.warn("[esi:structures] 요청 실패", {
+                corporationId,
+                status: res.status,
+                statusText: res.statusText,
+                body: body.length > 500 ? `${body.slice(0, 500)}…` : body,
+            });
+            return null;
+        }
         return await res.json();
-    } catch {
+    } catch (err) {
+        log.warn("[esi:structures] fetch 예외", {
+            corporationId,
+            message: err?.message ?? String(err),
+        });
         return null;
     }
 }

@@ -16,6 +16,7 @@ const log = logger();
  * @param {string} input.cmd
  * @param {string} [input.args]
  * @param {string} [input.discordNick] - 요청 시점 디스코드 표시명(예: esi-signup용)
+ * @param {number} [input.discordReceivedAtMs] - Discord 인터랙션 수신 시각(ms, 매트릭용)
  * @param {object} deps
  * @param {import("redis").RedisClientType} deps.redis
  * @returns {Promise<{tenantKey:string, envelopeId:string}>}
@@ -30,6 +31,10 @@ export async function publishProdCommand(input, deps) {
     const cmd = String(input.cmd ?? "").trim();
     const args = input.args == null ? "" : String(input.args);
     const discordNick = input.discordNick != null ? String(input.discordNick).trim() : "";
+    const discordReceivedAtMs =
+        typeof input.discordReceivedAtMs === "number" && Number.isFinite(input.discordReceivedAtMs)
+            ? input.discordReceivedAtMs
+            : undefined;
 
     if (!discordUserId || !guildId || !channelId) {
         log.error("[prod] 필수 메타 누락", { discordUserId, guildId, channelId });
@@ -47,8 +52,15 @@ export async function publishProdCommand(input, deps) {
         tenantKey,
         cmd,
         args,
-        meta: { discordUserId, guildId, channelId, ...(discordNick && { discordNick }) },
+        meta: {
+            discordUserId,
+            guildId,
+            channelId,
+            ...(discordNick && { discordNick }),
+            ...(discordReceivedAtMs != null && { discordReceivedAtMs }),
+        },
     });
+    envelope.meta.masterPublishedAtMs = Date.now();
 
     await publishCmdToRedisStream({ redis, envelope });
 
