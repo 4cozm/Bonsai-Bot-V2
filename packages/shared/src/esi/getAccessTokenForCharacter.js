@@ -21,7 +21,13 @@ export async function getAccessTokenForCharacter(prisma, characterId, options = 
     const row = await prisma.eveCharacter.findUnique({
         where: { characterId: cid },
     });
-    if (!row || row.accessToken == null || row.refreshToken == null) {
+    if (!row) {
+        log.warn("[esi:getAccessToken] eveCharacter 없음 (DB에 characterId 없음)", {
+            characterId: String(cid),
+        });
+        return null;
+    }
+    if (row.accessToken == null || row.refreshToken == null) {
         return null;
     }
 
