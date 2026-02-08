@@ -7,7 +7,12 @@
 //   - esi-fleets.write_fleet.v1  (PUT /fleets/{id}/members/{id})
 //
 import { getAccessTokenForCharacter, logger } from "@bonsai/shared";
-import { getCharacterFleet, resolveNames, setFleetMemberRole } from "../esi/fleet.js";
+import {
+    getCharacterFleet,
+    getFleetMembers,
+    resolveNames,
+    setFleetMemberRole,
+} from "../esi/fleet.js";
 
 const log = logger();
 
@@ -234,14 +239,73 @@ export default {
             };
         }
 
-        log.debug(`[함대장변경] 5단계: boss 토큰 확보 완료, PUT 시작`);
+        log.debug(`[함대장변경] 5단계: boss 토큰 확보 완료`);
+
+        // ── 5-1단계: 멤버 조회 → 현재 fleet_commander 확인 ──
+        const members = await getFleetMembers(bossToken, fleetId);
+        if (!members) {
+            return {
+                ok: false,
+                data: {
+                    error: "플릿 멤버 목록을 조회할 수 없습니다. Boss의 ESI 권한을 확인해주세요.",
+                },
+            };
+        }
+
+        log.debug(`[함대장변경] 5-1단계: 멤버 ${members.length}명 조회 완료`);
+
+        const currentFC = members.find((m) => m.role === "fleet_commander");
+        log.debug(
+            `[함대장변경] 5-1단계: 현재 fleet_commander=${currentFC ? currentFC.character_id : "(없음)"}`
+        );
+
+        // ── 5-2단계: fleet_commander 자리에 다른 사람이 있으면 먼저 내리기 ──
+        if (currentFC && String(currentFC.character_id) !== String(targetCharacterId)) {
+            // 요청자의 현재 squad/wing 정보를 사용해서 기존 FC를 그 자리로 이동
+            const demoteBody = {
+                role: "squad_member",
+                squad_id: fleetInfo.squad_id ?? 0,
+                wing_id: fleetInfo.wing_id ?? 0,
+            };
+
+            log.debug(
+                `[함대장변경] 5-2단계: 기존 FC(${currentFC.character_id}) 강등 시작 → ` +
+                    `squad_member (wing=${demoteBody.wing_id}, squad=${demoteBody.squad_id})`
+            );
+
+            const demoteResult = await setFleetMemberRole(
+                bossToken,
+                fleetId,
+                currentFC.character_id,
+                demoteBody
+            );
+
+            log.debug(
+                `[함대장변경] 5-2단계 강등 결과: ok=${demoteResult.ok} status=${demoteResult.status}` +
+                    (demoteResult.error ? ` error=${demoteResult.error}` : "")
+            );
+
+            if (!demoteResult.ok) {
+                return {
+                    ok: false,
+                    data: {
+                        error:
+                            `기존 함대장(${currentFC.character_id})을 강등하는 데 실패했습니다 ` +
+                            `(HTTP ${demoteResult.status}). ${demoteResult.error ?? ""}`,
+                    },
+                };
+            }
+        }
+
+        // ── 5-3단계: 요청자를 fleet_commander로 승격 ──
+        log.debug(`[함대장변경] 5-3단계: PUT fleet_commander 시작`);
 
         const putResult = await setFleetMemberRole(bossToken, fleetId, targetCharacterId, {
             role: "fleet_commander",
         });
 
         log.debug(
-            `[함대장변경] 5단계 PUT 결과: ok=${putResult.ok} status=${putResult.status}` +
+            `[함대장변경] 5-3단계 PUT 결과: ok=${putResult.ok} status=${putResult.status}` +
                 (putResult.error ? ` error=${putResult.error}` : "")
         );
 
