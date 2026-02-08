@@ -35,6 +35,11 @@ export async function runAutocompleteConsumer({ redis, prisma, tenantKey, signal
             const item = await redis.blPop(listKey, 0.2);
             if (!item) continue;
 
+            // #region agent log
+            const _wStart = Date.now();
+            log.warn(`[DEBUG:AC:W] BLPOP 수신! tenant=${t} listKey=${listKey} H1:수신확인`);
+            // #endregion
+
             const raw = String(item.element ?? "").trim();
             if (!raw) continue;
 
@@ -52,9 +57,20 @@ export async function runAutocompleteConsumer({ redis, prisma, tenantKey, signal
                 continue;
             }
 
+            // #region agent log
+            log.warn(
+                `[DEBUG:AC:W] 요청 파싱 완료 reqId=${requestId} cmd=${commandName} H2:키확인 H4:키매칭`
+            );
+            // #endregion
+
             const def = commandMap.get(commandName);
             if (!def || typeof def.autocomplete !== "function") {
                 log.warn(`[worker:ac] autocomplete 핸들러 없음 tenant=${t} cmd=${commandName}`);
+                // #region agent log
+                log.warn(
+                    `[DEBUG:AC:W] commandMap에 없음! cmd=${commandName} mapKeys=[${[...commandMap.keys()].join(",")}] H5:핸들러없음`
+                );
+                // #endregion
                 // 빈 결과 저장 → Master가 빈 배열 반환
                 await redis.set(`bonsai:ac:res:${requestId}`, "[]", { EX: 10 });
                 continue;
@@ -73,7 +89,14 @@ export async function runAutocompleteConsumer({ redis, prisma, tenantKey, signal
 
             if (!Array.isArray(choices)) choices = [];
 
-            await redis.set(`bonsai:ac:res:${requestId}`, JSON.stringify(choices), { EX: 10 });
+            const _resKey = `bonsai:ac:res:${requestId}`;
+            await redis.set(_resKey, JSON.stringify(choices), { EX: 10 });
+
+            // #region agent log
+            log.warn(
+                `[DEBUG:AC:W] SET 완료 resKey=${_resKey} choices=${choices.length}개 elapsed=${Date.now() - _wStart}ms H4:키매칭`
+            );
+            // #endregion
         } catch (err) {
             const msg = err?.message ?? String(err);
             // 연결 끊김 등 일시적 오류 → 짧은 대기 후 재시도

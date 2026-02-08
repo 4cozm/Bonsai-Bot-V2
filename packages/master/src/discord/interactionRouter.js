@@ -17,10 +17,29 @@ export async function routeInteraction(interaction, ctx = {}) {
 
     // Autocomplete: fast path (Redis List → Worker → 폴링 응답)
     if (interaction.isAutocomplete?.()) {
+        // #region agent log
+        const _routerAcStart = Date.now();
+        log.warn(
+            `[DEBUG:AC:R] autocomplete 수신 cmd=${interaction.commandName} t=${_routerAcStart}`
+        );
+        // #endregion
         try {
             const choices = await handleAutocomplete(interaction, { redis });
+            // #region agent log
+            log.warn(
+                `[DEBUG:AC:R] handleAutocomplete 반환 choices=${choices.length} elapsed=${Date.now() - _routerAcStart}ms H3:respond직전`
+            );
+            // #endregion
             await interaction.respond(choices);
+            // #region agent log
+            log.warn(`[DEBUG:AC:R] respond 성공 totalElapsed=${Date.now() - _routerAcStart}ms`);
+            // #endregion
         } catch (err) {
+            // #region agent log
+            log.warn(
+                `[DEBUG:AC:R] respond 실패 elapsed=${Date.now() - _routerAcStart}ms err=${err?.message}`
+            );
+            // #endregion
             log.warn("[router] autocomplete 실패", err);
             try {
                 await interaction.respond([]);
