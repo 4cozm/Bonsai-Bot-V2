@@ -133,6 +133,7 @@ async function startSqsResultPolling({ pendingMap, signal } = {}) {
 
 /**
  * resultEnv를 pendingMap과 매칭해 Discord 응답을 닫거나, 채널 브로드캐스트로 전송한다.
+ * (경계 E2E 테스트에서 재사용하기 위해 export)
  *
  * @param {object} params
  * @param {any} params.resultEnv
@@ -140,7 +141,7 @@ async function startSqsResultPolling({ pendingMap, signal } = {}) {
  * @param {"redis"|"sqs"} params.source
  * @returns {Promise<boolean>} handled
  */
-async function handleResult({ resultEnv, pendingMap, source }) {
+export async function handleResult({ resultEnv, pendingMap, source }) {
     if (resultEnv && typeof resultEnv.meta === "object") {
         resultEnv.meta.masterResultReceivedAtMs = Date.now();
     }
