@@ -7,13 +7,7 @@
 //   - esi-fleets.write_fleet.v1  (PUT /fleets/{id}/members/{id})
 //
 import { getAccessTokenForCharacter, logger } from "@bonsai/shared";
-import {
-    findBoss,
-    getCharacterFleet,
-    getFleetMembers,
-    resolveNames,
-    setFleetMemberRole,
-} from "../esi/fleet.js";
+import { getCharacterFleet, resolveNames, setFleetMemberRole } from "../esi/fleet.js";
 
 const log = logger();
 
@@ -166,31 +160,20 @@ export default {
         }
 
         const fleetId = fleetInfo.fleet_id;
-        log.debug(`[함대장변경] 2단계 완료: fleet_id=${fleetId} role=${fleetInfo.role}`);
-
-        // ── 3단계: fleet 멤버 조회 → boss 식별 ──
-        const members = await getFleetMembers(requesterToken, fleetId);
-        if (!members) {
-            return {
-                ok: false,
-                data: { error: "플릿 멤버 목록을 조회할 수 없습니다. ESI 권한을 확인해주세요." },
-            };
-        }
-
-        log.debug(`[함대장변경] 3단계: 멤버 ${members.length}명 조회 완료`);
-
-        const bossInfo = findBoss(members);
-        if (!bossInfo) {
-            return {
-                ok: false,
-                data: { error: "플릿에서 Boss를 식별할 수 없습니다." },
-            };
-        }
-
-        const bossCharacterId = bossInfo.bossCharacterId;
+        const bossCharacterId = fleetInfo.fleet_boss_id;
         log.debug(
-            `[함대장변경] 3단계 완료: boss characterId=${bossCharacterId} roleName=${bossInfo.bossRoleName}`
+            `[함대장변경] 2단계 완료: fleet_id=${fleetId} role=${fleetInfo.role} fleet_boss_id=${bossCharacterId}`
         );
+
+        // ── 3단계: boss 식별 (fleet_boss_id로 직접 확보) ──
+        if (!bossCharacterId) {
+            return {
+                ok: false,
+                data: { error: "플릿에서 Boss를 식별할 수 없습니다 (fleet_boss_id 없음)." },
+            };
+        }
+
+        log.debug(`[함대장변경] 3단계: boss characterId=${bossCharacterId}`);
 
         // boss 이름 조회 (메시지용)
         let bossName = String(bossCharacterId);
