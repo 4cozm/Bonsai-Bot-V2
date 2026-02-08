@@ -58,31 +58,18 @@ function getTenantToChannelMap() {
 }
 
 /**
- * FUEL_CHECK_TENANT_KEYS (쉼표 구분) 파싱.
- * @returns {string[]}
- */
-function parseFuelCheckTenantKeys() {
-    const raw = String(process.env.FUEL_CHECK_TENANT_KEYS ?? "").trim();
-    if (!raw) return [];
-    return raw
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-}
-
-/**
  * 매일 9시 연료 일일체크 명령을 각 테넌트 Worker에 발행.
+ * - tenant 목록은 DISCORD_TENANT_MAP (channelId:tenantKey,...) 에서 추출.
  * - prod에서만 초기화 시 기동 (isDev면 미등록).
  * - envelope.meta에 channelId, guildId 포함하여 Worker가 "전부 안전" 시 Master 브로드캐스트 요청 가능.
  */
 export async function startFuelCheckScheduler({ redis, signal }) {
-    const tenantKeys = parseFuelCheckTenantKeys();
+    const tenantToChannel = getTenantToChannelMap();
+    const tenantKeys = [...tenantToChannel.keys()];
     if (tenantKeys.length === 0) {
-        log.info("[global:fuel] FUEL_CHECK_TENANT_KEYS 비어있음 - 연료 스케줄러 비활성화");
+        log.info("[global:fuel] DISCORD_TENANT_MAP 비어있음 - 연료 스케줄러 비활성화");
         return;
     }
-
-    const tenantToChannel = getTenantToChannelMap();
     const guildId = String(process.env.DISCORD_GUILD_ID ?? "").trim();
 
     const hour = Number(process.env.FUEL_CHECK_HOUR ?? 9);

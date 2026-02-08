@@ -85,12 +85,12 @@ describe("worker/commands 연료 (fuel) 에러 경로·ephemeral", () => {
         expect(out.data.ephemeralReply).toBe(true);
     });
 
-    test("args.ephemeral false → 성공 시 data.ephemeralReply false", async () => {
+    test("args.visibility public → 성공 시 data.ephemeralReply false", async () => {
         mockParseAnchorCharIds.mockReturnValue([{ corporationId: 1, characterId: 2 }]);
         mockGetAccessTokenForCharacter.mockResolvedValue("token");
         mockGetCorporationStructures.mockResolvedValue([oneStructure()]);
         const ctx = { prisma, redis: null, tenantKey };
-        const envelope = { args: '{"ephemeral":false}' };
+        const envelope = { args: '{"visibility":"public"}' };
 
         const out = await fuel.execute(ctx, envelope);
 
@@ -142,7 +142,7 @@ describe("worker/commands 연료 (fuel) 1분 캐시", () => {
         expect(payload.embeds).toHaveLength(1);
     });
 
-    test("캐시 히트 → getCorporationStructures 미호출, 반환 data에 embed + 요청 args의 ephemeralReply", async () => {
+    test("캐시 히트 → getCorporationStructures 미호출, 반환 data에 embed + 요청 args의 visibility public → ephemeralReply false", async () => {
         const cachedPayload = JSON.stringify({
             embed: true,
             embeds: [
@@ -160,7 +160,10 @@ describe("worker/commands 연료 (fuel) 1분 캐시", () => {
             set: jest.fn().mockResolvedValue("OK"),
         };
         const ctx = { prisma, redis, tenantKey };
-        const envelope = { args: '{"ephemeral":false}' };
+        const envelope = {
+            args: '{"visibility":"public"}',
+            meta: { channelId: "ch1", guildId: "g1" },
+        };
 
         const out = await fuel.execute(ctx, envelope);
 
@@ -168,6 +171,7 @@ describe("worker/commands 연료 (fuel) 1분 캐시", () => {
         expect(out.data.embed).toBe(true);
         expect(out.data.embeds[0].title).toBe("현재 스트럭쳐 연료 상태");
         expect(out.data.ephemeralReply).toBe(false);
+        expect(out.meta).toEqual({ broadcastToChannel: true, channelId: "ch1", guildId: "g1" });
         expect(mockGetCorporationStructures).not.toHaveBeenCalled();
         expect(redis.set).not.toHaveBeenCalled();
     });

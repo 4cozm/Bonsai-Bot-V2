@@ -20,10 +20,14 @@ export default {
         type: 1,
         options: [
             {
-                name: "ephemeral",
-                description: "본인만 보기 (기본: 켜짐)",
-                type: 5,
+                name: "visibility",
+                description: "공개: 공개하기 | 비공개 (기본값)",
+                type: 3,
                 required: false,
+                choices: [
+                    { name: "비공개 (기본값)", value: "private" },
+                    { name: "공개하기", value: "public" },
+                ],
             },
         ],
     },
@@ -48,7 +52,11 @@ export default {
         } catch {
             // ignore
         }
-        const ephemeral = args?.ephemeral !== false;
+        const isPublic = args?.visibility === "public";
+        const ephemeral = !isPublic;
+        const meta = envelope?.meta ?? {};
+        const channelId = String(meta.channelId ?? "").trim();
+        const guildId = String(meta.guildId ?? "").trim();
 
         if (redis && tenantKey) {
             const cacheKey = `${FUEL_CACHE_KEY_PREFIX}${tenantKey}`;
@@ -57,10 +65,14 @@ export default {
                 if (cached) {
                     const data = JSON.parse(cached);
                     log.info("[cmd:연료] 캐시 히트", { tenantKey });
-                    return {
+                    const result = {
                         ok: true,
                         data: { ...data, ephemeralReply: ephemeral },
                     };
+                    if (ephemeral === false && channelId) {
+                        result.meta = { broadcastToChannel: true, channelId, guildId };
+                    }
+                    return result;
                 }
             } catch {
                 // 캐시 파싱 실패 시 조회 진행
@@ -171,6 +183,10 @@ export default {
             }
         }
 
-        return { ok: true, data };
+        const result = { ok: true, data };
+        if (ephemeral === false && channelId) {
+            result.meta = { broadcastToChannel: true, channelId, guildId };
+        }
+        return result;
     },
 };

@@ -15,22 +15,29 @@ export async function getCorporationStructures(accessToken, corporationId) {
     if (!token) return null;
 
     const url = `${ESI_STRUCTURES_URL}/${corporationId}/structures/`;
+
     try {
         const res = await fetch(url, {
             method: "GET",
             headers: { Authorization: `Bearer ${token}` },
         });
+        const bodyText = await res.text();
         if (!res.ok) {
-            const body = await res.text();
             log.warn("[esi:structures] 요청 실패", {
                 corporationId,
                 status: res.status,
                 statusText: res.statusText,
-                body: body.length > 500 ? `${body.slice(0, 500)}…` : body,
+                body: bodyText.length > 500 ? `${bodyText.slice(0, 500)}…` : bodyText,
             });
             return null;
         }
-        return await res.json();
+        let result = null;
+        try {
+            result = bodyText ? JSON.parse(bodyText) : [];
+        } catch {
+            result = [];
+        }
+        return result;
     } catch (err) {
         log.warn("[esi:structures] fetch 예외", {
             corporationId,

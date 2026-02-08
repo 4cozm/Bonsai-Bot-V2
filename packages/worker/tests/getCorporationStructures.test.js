@@ -41,7 +41,7 @@ describe("worker/esi/getCorporationStructures", () => {
         ];
         globalThis.fetch = jest.fn().mockResolvedValue({
             ok: true,
-            json: () => Promise.resolve(structures),
+            text: () => Promise.resolve(JSON.stringify(structures)),
         });
 
         const result = await getCorporationStructures("bearer-token", 98765);

@@ -67,10 +67,14 @@ export default {
                 choices: [...HUB_CHOICES],
             },
             {
-                name: "ephemeral",
-                description: "본인만 보기 (기본: 켜짐)",
-                type: 5,
+                name: "visibility",
+                description: "공개: 공개하기 | 비공개 (기본값)",
+                type: 3,
                 required: false,
+                choices: [
+                    { name: "비공개 (기본값)", value: "private" },
+                    { name: "공개하기", value: "public" },
+                ],
             },
         ],
     },
@@ -98,7 +102,11 @@ export default {
             // ignore
         }
 
-        const ephemeral = args?.ephemeral !== false;
+        const isPublic = args?.visibility === "public";
+        const ephemeral = !isPublic;
+        const meta = envelope?.meta ?? {};
+        const channelId = String(meta.channelId ?? "").trim();
+        const guildId = String(meta.guildId ?? "").trim();
 
         const typeRaw = String(args?.type ?? "")
             .trim()
@@ -257,7 +265,8 @@ export default {
             },
         ];
 
-        return {
+        // 사용자가 "보이기" 선택(ephemeral false)이면 채널 브로드캐스트로 전달. Master는 editReply 대신 채널에 메시지 전송 후 "결과를 채널에 공개했습니다."로 editReply.
+        const result = {
             ok: true,
             data: {
                 embed: true,
@@ -268,5 +277,9 @@ export default {
                 ephemeralReply: ephemeral,
             },
         };
+        if (ephemeral === false && channelId) {
+            result.meta = { broadcastToChannel: true, channelId, guildId };
+        }
+        return result;
     },
 };

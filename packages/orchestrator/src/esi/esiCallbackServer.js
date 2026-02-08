@@ -79,9 +79,9 @@ async function handleCallback(url, deps) {
         clientSecret,
     });
     if (!tokenResult) {
+        log.warn("[esi:callback] 토큰 교환 실패 (exchangeEveCode null)");
         return { statusCode: 400, body: "Token exchange failed" };
     }
-
     const charInfo = decodeEveJwtPayload(tokenResult.access_token);
     if (!charInfo) {
         log.warn("[esi:callback] JWT 디코딩 실패");
