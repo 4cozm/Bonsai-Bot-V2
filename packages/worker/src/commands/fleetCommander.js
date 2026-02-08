@@ -89,6 +89,8 @@ export default {
 
         const meta = envelope?.meta ?? {};
         const discordUserId = String(meta.discordUserId ?? "").trim();
+        const channelId = String(meta.channelId ?? "").trim();
+        const guildId = String(meta.guildId ?? "").trim();
         if (!discordUserId) {
             return { ok: false, data: { error: "discordUserId가 비어있습니다." } };
         }
@@ -199,6 +201,7 @@ export default {
                     color: 0xf1c40f, // 노랑 — 경고/알림
                     timestamp: false,
                 },
+                meta: { broadcastToChannel: true, channelId, guildId },
             };
         }
 
@@ -335,8 +338,9 @@ export default {
                     { name: "Fleet ID", value: String(fleetId), inline: true },
                 ],
                 color: 0x2ecc71, // 초록 — 성공
-                footer: `요청자: <@${discordUserId}>`,
+                footer: `요청자: <@${targetCharacterName}>`,
             },
+            meta: { broadcastToChannel: true, channelId, guildId },
         };
     },
 };
