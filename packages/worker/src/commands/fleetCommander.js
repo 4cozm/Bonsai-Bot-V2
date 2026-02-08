@@ -238,8 +238,6 @@ export default {
 
         const putResult = await setFleetMemberRole(bossToken, fleetId, targetCharacterId, {
             role: "fleet_commander",
-            squad_id: 0,
-            wing_id: 0,
         });
 
         log.debug(
