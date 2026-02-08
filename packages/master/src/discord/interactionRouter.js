@@ -1,5 +1,6 @@
 // packages/master/src/discord/interactionRouter.js
 import { logger, pickDeferPhrase } from "@bonsai/shared";
+import { handleAutocomplete } from "../usecases/handleAutocomplete.js";
 import { publishDevCommand } from "../usecases/publishDevCommand.js";
 import { publishProdCommand } from "../usecases/publishProdCommand.js";
 
@@ -12,7 +13,24 @@ const log = logger();
  * @param {import("redis").RedisClientType} [ctx.redis]
  */
 export async function routeInteraction(interaction, ctx = {}) {
-    const { pendingMap, redis } = ctx;
+    const { pendingMap, redis, acRedis } = ctx;
+
+    // Autocomplete: fast path (Redis List → Worker → 폴링 응답)
+    // acRedis: XREAD BLOCK와 분리된 전용 클라이언트 → 지연 없이 즉시 실행
+    if (interaction.isAutocomplete?.()) {
+        try {
+            const choices = await handleAutocomplete(interaction, { redis: acRedis ?? redis });
+            await interaction.respond(choices);
+        } catch (err) {
+            log.warn("[router] autocomplete 실패", err);
+            try {
+                await interaction.respond([]);
+            } catch {
+                // 이미 응답했거나 만료된 interaction — 무시
+            }
+        }
+        return;
+    }
 
     if (!interaction.isChatInputCommand?.()) return;
 

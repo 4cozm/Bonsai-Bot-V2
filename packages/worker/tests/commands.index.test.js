@@ -13,9 +13,14 @@ describe("worker/commands/index getCommandMap()", () => {
         expect(map.has("esi-complete")).toBe(true);
         expect(map.has("캐릭터목록")).toBe(true);
         expect(map.has("시세")).toBe(true);
+        expect(map.has("함대장변경")).toBe(true);
 
         const ping = map.get("핑");
         expect(typeof ping.execute).toBe("function");
+
+        const fleetCommanderCmd = map.get("함대장변경");
+        expect(typeof fleetCommanderCmd.execute).toBe("function");
+        expect(typeof fleetCommanderCmd.autocomplete).toBe("function");
     });
 
     test("중복 등록 방어가 동작해야 함(구조상)", () => {
