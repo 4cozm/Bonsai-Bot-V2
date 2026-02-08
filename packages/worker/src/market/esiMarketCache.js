@@ -84,33 +84,41 @@ export async function getMarketPrice(redis, { tenantKey, hub, typeId }) {
         await sleep(LOCK_BACKOFF_MS * (i + 1));
         const recheck = await redis.get(cacheKey);
         if (recheck) {
-            const data = JSON.parse(recheck);
-            return {
-                fetchedAt: data.fetchedAt,
-                sellMin: data.sellMin ?? null,
-                buyMax: data.buyMax ?? null,
-                regionId: hubInfo.regionId,
-                stationId: hubInfo.stationId,
-                typeId: data.typeId ?? typeId,
-                ...(data.capped && { capped: true }),
-            };
+            try {
+                const data = JSON.parse(recheck);
+                return {
+                    fetchedAt: data.fetchedAt,
+                    sellMin: data.sellMin ?? null,
+                    buyMax: data.buyMax ?? null,
+                    regionId: hubInfo.regionId,
+                    stationId: hubInfo.stationId,
+                    typeId: data.typeId ?? typeId,
+                    ...(data.capped && { capped: true }),
+                };
+            } catch {
+                // 캐시 값 깨짐 → 스킵하고 fetch로 진행
+            }
         }
     }
 
     if (!lockAcquired) {
         const stale = await redis.get(cacheKey);
         if (stale) {
-            const data = JSON.parse(stale);
-            return {
-                fetchedAt: data.fetchedAt,
-                sellMin: data.sellMin ?? null,
-                buyMax: data.buyMax ?? null,
-                regionId: hubInfo.regionId,
-                stationId: hubInfo.stationId,
-                typeId: data.typeId ?? typeId,
-                stale: true,
-                ...(data.capped && { capped: true }),
-            };
+            try {
+                const data = JSON.parse(stale);
+                return {
+                    fetchedAt: data.fetchedAt,
+                    sellMin: data.sellMin ?? null,
+                    buyMax: data.buyMax ?? null,
+                    regionId: hubInfo.regionId,
+                    stationId: hubInfo.stationId,
+                    typeId: data.typeId ?? typeId,
+                    stale: true,
+                    ...(data.capped && { capped: true }),
+                };
+            } catch {
+                // 캐시 값 깨짐 → 스킵하고 아래 throw로 일관된 에러 반환
+            }
         }
         throw new Error("시세 조회가 지연 중입니다. 잠시 후 다시 시도해 주세요.");
     }
@@ -237,10 +245,12 @@ async function fetchStationOrders(regionId, stationId, typeId) {
             if (!sellRes.ok) throw new Error(`ESI 마켓(sell) 실패: ${sellRes.status}`);
             const sellOrders = await sellRes.json();
             const sellXPages = parseInt(sellRes.headers.get("x-pages") || "1", 10);
-            for (const o of sellOrders) {
-                if (o.location_id === stationId && typeof o.price === "number") {
-                    if (sellMin == null || o.price < sellMin) sellMin = o.price;
-                    if (sellHitPage == null) sellHitPage = sellPage;
+            if (Array.isArray(sellOrders)) {
+                for (const o of sellOrders) {
+                    if (o.location_id === stationId && typeof o.price === "number") {
+                        if (sellMin == null || o.price < sellMin) sellMin = o.price;
+                        if (sellHitPage == null) sellHitPage = sellPage;
+                    }
                 }
             }
             sellPage++;
@@ -254,10 +264,12 @@ async function fetchStationOrders(regionId, stationId, typeId) {
             if (!buyRes.ok) throw new Error(`ESI 마켓(buy) 실패: ${buyRes.status}`);
             const buyOrders = await buyRes.json();
             const buyXPages = parseInt(buyRes.headers.get("x-pages") || "1", 10);
-            for (const o of buyOrders) {
-                if (o.location_id === stationId && typeof o.price === "number") {
-                    if (buyMax == null || o.price > buyMax) buyMax = o.price;
-                    if (buyHitPage == null) buyHitPage = buyPage;
+            if (Array.isArray(buyOrders)) {
+                for (const o of buyOrders) {
+                    if (o.location_id === stationId && typeof o.price === "number") {
+                        if (buyMax == null || o.price > buyMax) buyMax = o.price;
+                        if (buyHitPage == null) buyHitPage = buyPage;
+                    }
                 }
             }
             buyPage++;

@@ -1,4 +1,4 @@
-name: CI
+name: CI (PR)
 
 # PR이 열린 상태(머지 대기)에서만 실행. dev에 직접 push/머지 시에는 실행하지 않음.
 on:
@@ -9,7 +9,11 @@ jobs:
     test-and-coverage:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - name: Checkout (PR head sha)
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  fetch-depth: 0
 
             - uses: actions/setup-node@v4
               with:
@@ -36,13 +40,12 @@ jobs:
                   verbose: true
 
             - name: Build Codecov PR URL
-              if: ${{ github.event_name == 'pull_request' }}
               id: codecov_url
               run: |
                   echo "url=https://app.codecov.io/gh/${{ github.repository }}/pull/${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
 
             - name: Notify Discord (PR만)
-              if: ${{ always() && github.event_name == 'pull_request' }}
+              if: ${{ always() }}
               env:
                   DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
                   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -64,10 +67,8 @@ jobs:
                     COLOR=15158332
                   fi
 
-                  # (옵션) Codecov 배지 이미지 (브랜치 기준). dev가 기본이면 그대로 사용.
                   BADGE_URL="https://codecov.io/gh/${REPO}/branch/dev/graph/badge.svg"
 
-                  # embed json
                   payload=$(cat <<JSON
                   {
                     "username": "Bonsai-Bot",

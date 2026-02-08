@@ -18,6 +18,7 @@ const log = logger();
  * @param {string} input.cmd       // inner cmd
  * @param {string} [input.args]    // inner args
  * @param {boolean} [input.ephemeral]  // true=비공개(기본), false=공개
+ * @param {number} [input.discordReceivedAtMs] - Discord 인터랙션 수신 시각(ms, 매트릭용)
  * @returns {Promise<{messageId: string, targetDev: string, tenantKey: string, envelopeId: string}>}
  */
 export async function publishDevCommand(input) {
@@ -27,6 +28,10 @@ export async function publishDevCommand(input) {
     const innerCmd = String(input.cmd ?? "").trim();
     const innerArgs = input.args == null ? "" : String(input.args);
     const ephemeral = input.ephemeral !== false;
+    const discordReceivedAtMs =
+        typeof input.discordReceivedAtMs === "number" && Number.isFinite(input.discordReceivedAtMs)
+            ? input.discordReceivedAtMs
+            : undefined;
 
     if (!discordUserId || !guildId || !channelId) throw new Error("필수 메타 누락");
     if (!innerCmd) throw new Error("dev inner cmd가 비어있음");
@@ -41,7 +46,12 @@ export async function publishDevCommand(input) {
         tenantKey,
         cmd: "dev",
         args: JSON.stringify({ cmd: innerCmd, args: innerArgs, ephemeral }),
-        meta: { discordUserId, guildId, channelId },
+        meta: {
+            discordUserId,
+            guildId,
+            channelId,
+            ...(discordReceivedAtMs != null && { discordReceivedAtMs }),
+        },
     });
 
     envelope.targetDev = [targetDev];

@@ -16,7 +16,8 @@ export async function routeInteraction(interaction, ctx = {}) {
 
     if (!interaction.isChatInputCommand?.()) return;
 
-    await interaction.deferReply({ flags: 0 });
+    const discordReceivedAtMs = Date.now();
+    await interaction.deferReply({ flags: 64 });
 
     try {
         const cmdName = String(interaction.commandName ?? "").trim();
@@ -42,12 +43,11 @@ export async function routeInteraction(interaction, ctx = {}) {
                 ephemeral,
                 interactionId: interaction.id,
                 interactionToken: interaction.token,
+                discordReceivedAtMs,
             });
 
             pendingMap.set(res.envelopeId, { interaction });
-            await interaction.editReply(
-                `dev 요청 접수됨 (tenant=${res.tenantKey}, targetDev=${res.targetDev})\n${pickDeferPhrase()}`
-            );
+            await interaction.editReply(pickDeferPhrase());
             return;
         }
 
@@ -70,12 +70,13 @@ export async function routeInteraction(interaction, ctx = {}) {
                 cmd: cmdName,
                 args,
                 ...(discordNick && { discordNick }),
+                discordReceivedAtMs,
             },
             { redis }
         );
 
         pendingMap.set(res.envelopeId, { interaction });
-        await interaction.editReply(`요청 접수됨 (tenant=${res.tenantKey})\n${pickDeferPhrase()}`);
+        await interaction.editReply(pickDeferPhrase());
     } catch (err) {
         log.error("[router] 처리 실패", err);
         const message =
