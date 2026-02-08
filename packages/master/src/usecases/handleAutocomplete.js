@@ -26,6 +26,18 @@ export async function handleAutocomplete(interaction, { redis }) {
     // #region agent log
     const _acStart = Date.now();
     log.warn(`[DEBUG:AC:M] handleAutocomplete 진입 t=${_acStart}`);
+    fetch("http://127.0.0.1:7242/ingest/7070e61a-5c08-41bb-b8db-31b1f8c2675e", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            location: "handleAutocomplete.js:entry",
+            message: "AC entry",
+            data: { t: _acStart },
+            timestamp: Date.now(),
+            hypothesisId: "H6",
+            runId: "post-fix",
+        }),
+    }).catch(() => {});
     // #endregion
 
     const channelId = String(interaction.channelId ?? "").trim();
@@ -59,7 +71,20 @@ export async function handleAutocomplete(interaction, { redis }) {
     await redis.rPush(listKey, payload);
 
     // #region agent log
-    log.warn(`[DEBUG:AC:M] RPUSH 완료 elapsed=${Date.now() - _acStart}ms H1:RPUSH완료`);
+    const _rpushElapsed = Date.now() - _acStart;
+    log.warn(`[DEBUG:AC:M] RPUSH 완료 elapsed=${_rpushElapsed}ms H1:RPUSH완료`);
+    fetch("http://127.0.0.1:7242/ingest/7070e61a-5c08-41bb-b8db-31b1f8c2675e", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            location: "handleAutocomplete.js:rpush-done",
+            message: "RPUSH done",
+            data: { rpushMs: _rpushElapsed, listKey, requestId },
+            timestamp: Date.now(),
+            hypothesisId: "H6",
+            runId: "post-fix",
+        }),
+    }).catch(() => {});
     // #endregion
 
     // 폴링: Worker가 resKey에 결과를 SET하면 즉시 반환
@@ -74,6 +99,18 @@ export async function handleAutocomplete(interaction, { redis }) {
             log.warn(
                 `[DEBUG:AC:M] 폴링 히트! polls=${_pollCount} elapsed=${_elapsed}ms resKey=${resKey} rawLen=${raw.length} H3:타이밍`
             );
+            fetch("http://127.0.0.1:7242/ingest/7070e61a-5c08-41bb-b8db-31b1f8c2675e", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    location: "handleAutocomplete.js:poll-hit",
+                    message: "Poll hit",
+                    data: { polls: _pollCount, elapsedMs: _elapsed, rawLen: raw.length },
+                    timestamp: Date.now(),
+                    hypothesisId: "H6",
+                    runId: "post-fix",
+                }),
+            }).catch(() => {});
             // #endregion
             // 클린업
             redis.del(resKey).catch(() => {});

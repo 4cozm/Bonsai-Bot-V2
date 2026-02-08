@@ -13,9 +13,10 @@ const log = logger();
  * @param {import("redis").RedisClientType} [ctx.redis]
  */
 export async function routeInteraction(interaction, ctx = {}) {
-    const { pendingMap, redis } = ctx;
+    const { pendingMap, redis, acRedis } = ctx;
 
     // Autocomplete: fast path (Redis List → Worker → 폴링 응답)
+    // acRedis: XREAD BLOCK와 분리된 전용 클라이언트 → 지연 없이 즉시 실행
     if (interaction.isAutocomplete?.()) {
         // #region agent log
         const _routerAcStart = Date.now();
@@ -24,7 +25,7 @@ export async function routeInteraction(interaction, ctx = {}) {
         );
         // #endregion
         try {
-            const choices = await handleAutocomplete(interaction, { redis });
+            const choices = await handleAutocomplete(interaction, { redis: acRedis ?? redis });
             // #region agent log
             log.warn(
                 `[DEBUG:AC:R] handleAutocomplete 반환 choices=${choices.length} elapsed=${Date.now() - _routerAcStart}ms H3:respond직전`
@@ -32,13 +33,37 @@ export async function routeInteraction(interaction, ctx = {}) {
             // #endregion
             await interaction.respond(choices);
             // #region agent log
-            log.warn(`[DEBUG:AC:R] respond 성공 totalElapsed=${Date.now() - _routerAcStart}ms`);
+            const _respondOkMs = Date.now() - _routerAcStart;
+            log.warn(`[DEBUG:AC:R] respond 성공 totalElapsed=${_respondOkMs}ms`);
+            fetch("http://127.0.0.1:7242/ingest/7070e61a-5c08-41bb-b8db-31b1f8c2675e", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    location: "interactionRouter.js:respond-ok",
+                    message: "respond OK",
+                    data: { totalMs: _respondOkMs, choiceCount: choices.length },
+                    timestamp: Date.now(),
+                    hypothesisId: "H6",
+                    runId: "post-fix",
+                }),
+            }).catch(() => {});
             // #endregion
         } catch (err) {
             // #region agent log
-            log.warn(
-                `[DEBUG:AC:R] respond 실패 elapsed=${Date.now() - _routerAcStart}ms err=${err?.message}`
-            );
+            const _respondFailMs = Date.now() - _routerAcStart;
+            log.warn(`[DEBUG:AC:R] respond 실패 elapsed=${_respondFailMs}ms err=${err?.message}`);
+            fetch("http://127.0.0.1:7242/ingest/7070e61a-5c08-41bb-b8db-31b1f8c2675e", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    location: "interactionRouter.js:respond-fail",
+                    message: "respond FAIL",
+                    data: { totalMs: _respondFailMs, err: err?.message },
+                    timestamp: Date.now(),
+                    hypothesisId: "H6",
+                    runId: "post-fix",
+                }),
+            }).catch(() => {});
             // #endregion
             log.warn("[router] autocomplete 실패", err);
             try {

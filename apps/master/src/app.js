@@ -20,6 +20,8 @@ async function main() {
 
     await initializeMaster();
     const redis = await createRedisClient();
+    // Autocomplete 전용 Redis 클라이언트 (XREAD BLOCK와 분리 — 블로킹 방지)
+    const acRedis = await createRedisClient();
 
     const isDev = isDevMode();
     log.info(
@@ -54,6 +56,12 @@ async function main() {
                 await redis.quit();
             } catch (e) {
                 log.warn("[master] Redis quit 중 오류", e);
+            }
+
+            try {
+                await acRedis.quit();
+            } catch (e) {
+                log.warn("[master] acRedis quit 중 오류", e);
             }
         } finally {
             process.exit(0);
@@ -117,7 +125,7 @@ async function main() {
     });
 
     client.on("interactionCreate", (interaction) =>
-        routeInteraction(interaction, { pendingMap, redis })
+        routeInteraction(interaction, { pendingMap, redis, acRedis })
     );
 
     client.on("error", (err) => log.warn("[master] Discord client error", err));
