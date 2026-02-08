@@ -133,6 +133,7 @@ export default {
             const displayType = `${buildingType.emoji} ${buildingType.name}`;
             return { name, type: displayType, remainingDays };
         });
+        tableRows.sort((a, b) => (b.name ?? "").localeCompare(a.name ?? "", "ko"));
 
         const nameValue = tableRows.map((r) => r.name).join("\n") || "정보 없음";
         const typeValue = tableRows.map((r) => r.type).join("\n") || "정보 없음";
