@@ -14,6 +14,7 @@ const levels = {
     warn: 0,
     error: 1,
     info: 2,
+    debug: 3, // 임시 디버깅용. 테스트/원인 파악 후 호출부 제거가 원칙.
 };
 
 function buildServiceName() {
@@ -81,10 +82,11 @@ function createLoggerInstance() {
 
     const transports = [];
 
-    // 항상 콘솔 출력
+    // 기본 debug — 임시 log.debug() 호출이 보이도록 해서 디버깅 후 제거를 잊지 않도록 함. LOG_LEVEL으로 조정 가능.
+    const consoleLevel = (process.env.LOG_LEVEL || "debug").toLowerCase();
     transports.push(
         new winston.transports.Console({
-            level: "info",
+            level: levels[consoleLevel] !== undefined ? consoleLevel : "debug",
         })
     );
 
@@ -94,7 +96,7 @@ function createLoggerInstance() {
 
         transports.push(
             new winston.transports.File({
-                level: "info",
+                level: "debug",
                 filename: path.join(logDir, "app.log"),
                 maxsize: 10 * 1024 * 1024, // 10MB
                 maxFiles: 10,
@@ -114,9 +116,10 @@ function createLoggerInstance() {
         );
     }
 
+    const logLevel = (process.env.LOG_LEVEL || "debug").toLowerCase();
     const base = winston.createLogger({
         levels,
-        level: "info",
+        level: levels[logLevel] !== undefined ? logLevel : "debug",
         format: buildFormat(),
         transports,
     });

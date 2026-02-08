@@ -44,6 +44,14 @@ export async function exchangeEveCode({ code, redirectUri, clientId, clientSecre
         return null;
     }
     const refreshToken = data?.refresh_token ?? null;
+    if (refreshToken == null || String(refreshToken).trim() === "") {
+        log.warn(
+            "[esi:token] refresh_token 없음 — EVE 응답에 refresh_token 없음, 연동 후 토큰 저장 불가",
+            {
+                hasExpiresIn: data?.expires_in != null,
+            }
+        );
+    }
     const expiresIn = Number(data?.expires_in) || DEFAULT_EXPIRES_IN;
     return {
         access_token: accessToken,

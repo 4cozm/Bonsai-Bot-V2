@@ -1,58 +1,57 @@
 // packages/shared/src/config/keys.js
 
+/**
+ * Key Vault 로딩용 환경 변수 키 정의.
+ *
+ * --- 역할(role) ---
+ * - master: Discord 게이트웨이 (슬래시 명령 수신, SQS/Streams 발행).
+ * - worker: Redis Streams 소비. TENANT=CAT|FISH|... 이면 테넌트 워커, TENANT=global 이면 전역(시세 등) 전용 워커.
+ * - global: 오케스트레이터(Orchestrator). 전역 스케줄·ESI 콜백·전역 스트림 소비. (역할 이름이 "global"이지만 "global worker"와 구분됨.)
+ *
+ * --- sharedKeys vs tenantKeys ---
+ * - sharedKeys: Key Vault에서 접두이 없이 로드해 process.env[키]에 주입. 모든 역할에서 "오케스트레이터용 키 + 해당 역할 전용 키"가 합쳐짐.
+ * - tenantKeys: 테넌트 워커만 사용. Vault 이름이 {TENANT}-{KEY}(예: CAT-EVE-ANCHOR-CHARIDS). 오케스트레이터 및 TENANT=global 워커는 로드하지 않음(worker 초기화에서 빈 배열로 덮어씀).
+ */
+
 function envName(isDev) {
     return isDev ? "dev" : "prod";
 }
 
+/**
+ * 역할별 필수 env 키. Key Vault 로드 시 keySetsFor()에서 사용.
+ * - global: 오케스트레이터 프로세스용. sharedKeys 산출 시 모든 role에 선행 병합됨(중복 키는 역할별로 한 번씩만 로드).
+ */
 export const ENV_REQUIRED = Object.freeze({
+    // master = Discord Master 전용
     master: Object.freeze({
         common: Object.freeze([
-            //AWS SNS 관련
             "AWS_REGION",
             "AWS_ACCESS_KEY_ID",
             "AWS_SECRET_ACCESS_KEY",
             "AWS_SNS_TOPIC",
             "REDIS_URL",
         ]),
-        dev: Object.freeze([
-            // dev master 전용
-            "DEV_SQS_QUEUE_URL",
-        ]),
+        dev: Object.freeze(["DEV_SQS_QUEUE_URL"]),
         prod: Object.freeze([
-            // prod master 전용
-
-            //Discord 관련 작업을 위해서
             "DISCORD_APP_ID",
             "DISCORD_TOKEN",
             "DISCORD_TENANT_MAP",
             "DISCORD_GUILD_ID",
-            //AWS SNS 관련
             "DEV_DISCORD_MAP",
-
-            //AWS result SQS 풀링 관련
             "PROD_SQS_RESULT_QUEUE_URL",
         ]),
     }),
 
+    // worker = 테넌트 워커(TENANT=CAT 등) 전용. TENANT=global 워커도 role "worker"로 호출하나 tenantKeys는 초기화에서 비움.
     worker: Object.freeze({
         common: Object.freeze([
             "REDIS_URL",
             "ESI_STATE_SECRET",
-            // 테넌트 DB 연결 (getPrisma): 둘 중 하나 필수. Key Vault 공통
             "TENANT_DB_URL_TEMPLATE",
             "DATABASE_URL",
-            // 워커 부팅 시 테넌트 DB 없으면 CREATE DATABASE용. Key Vault 공통
             "MYSQL_ADMIN_URL",
-            // 개발환경에서는 스스로 발급해서 로컬 .env에 저장
-            /**
-             * EVE_ESI_CLIENT_ID=
-             * EVE_ESI_CLIENT_SECRET=
-             * EVE_ESI_REDIRECT_URI=
-             */
         ]),
-        dev: Object.freeze([
-            // dev worker 전용
-        ]),
+        dev: Object.freeze([]),
         prod: Object.freeze([
             "EVE_ESI_CLIENT_ID",
             "EVE_ESI_CLIENT_SECRET",
@@ -62,17 +61,17 @@ export const ENV_REQUIRED = Object.freeze({
         ]),
     }),
 
+    // global = 오케스트레이터(Orchestrator) 전용. sharedKeys 계산 시 이 키들이 모든 role에 선행 병합됨.
     global: Object.freeze({
         common: Object.freeze([
             "REDIS_URL",
-            // 콜백에서 getPrisma(tenantKey)용. Key Vault 공통 (dev/prod 동일 키 로딩)
             "TENANT_DB_URL_TEMPLATE",
             "DATABASE_URL",
-            // global은 DB 생성 안 함. 단, Key Vault에 넣어둔 경우 로딩만 함
             "MYSQL_ADMIN_URL",
         ]),
         dev: Object.freeze([]),
         prod: Object.freeze([
+            "DISCORD_TENANT_MAP",
             "DISCORD_DT_WEBHOOK_URL",
             "DISCORD_IT_PING_WEBHOOK_URL",
             "DISCORD_ALERT_WEBHOOK_URL",
@@ -86,23 +85,22 @@ export const ENV_REQUIRED = Object.freeze({
 });
 
 /**
- * 테넌트 prefix가 필요한 키 (tenant마다 값이 달라지는 것만)
- * - CAT-*, FISH-* 로 KeyVault에 저장
+ * 테넌트 워커 전용. Vault에 {TENANT}-{KEY}(예: CAT-EVE-ANCHOR-CHARIDS)로 저장.
+ * 오케스트레이터 및 TENANT=global 워커는 사용하지 않음(worker 초기화에서 tenantKeys를 빈 배열로 덮어씀).
  */
-export const WORKER_TENANT_REQUIRED = Object.freeze([
-    // 예: "앵커꼽 ID"
-    "EVE_ANCHOR_CHARIDS",
-]);
+export const WORKER_TENANT_REQUIRED = Object.freeze(["EVE_ANCHOR_CHARIDS"]);
 
 //--------------------------------------------------------
 
 /**
  * 역할별 KeyVault 로딩 키 세트 반환.
- * - sharedKeys: global/common + role/common + role/dev|prod
- * - tenantKeys: worker만 (WORKER_TENANT_REQUIRED)
  *
- * @param {{role:"master"|"worker"|"global", isDev:boolean}} ctx
+ * @param {object} ctx
+ * @param {"master"|"worker"|"global"} ctx.role - master: Discord Master | worker: Tenant/Global Worker | global: Orchestrator
+ * @param {boolean} ctx.isDev
  * @returns {{sharedKeys:string[], tenantKeys:string[]}}
+ * @returns {string[]} sharedKeys - 오케스트레이터용 키 + 역할별 키. Vault 공용 네임스페이스(접두이 없이 로드).
+ * @returns {string[]} tenantKeys - 테넌트 접두이로 로드할 키. worker만 비어 있지 않음(worker 초기화에서 TENANT=global이면 []로 덮어씀).
  */
 export function keySetsFor(ctx) {
     const env = envName(ctx.isDev);

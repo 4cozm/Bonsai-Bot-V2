@@ -25,20 +25,19 @@ const { startFuelCheckScheduler } = await import("../src/schedulers/fuelCheckSch
 
 const redis = {};
 
-test("FUEL_CHECK_TENANT_KEYS 비어있음 → publishCmdToRedisStream 0회", async () => {
-    const prev = process.env.FUEL_CHECK_TENANT_KEYS;
-    process.env.FUEL_CHECK_TENANT_KEYS = "";
+test("DISCORD_TENANT_MAP 비어있음 → publishCmdToRedisStream 0회", async () => {
+    const prev = process.env.DISCORD_TENANT_MAP;
+    delete process.env.DISCORD_TENANT_MAP;
     try {
         await startFuelCheckScheduler({ redis, signal: new AbortController().signal });
         expect(mockPublishCmdToRedisStream).not.toHaveBeenCalled();
     } finally {
-        if (prev !== undefined) process.env.FUEL_CHECK_TENANT_KEYS = prev;
-        else delete process.env.FUEL_CHECK_TENANT_KEYS;
+        if (prev !== undefined) process.env.DISCORD_TENANT_MAP = prev;
+        else delete process.env.DISCORD_TENANT_MAP;
     }
 });
 
-test("FUEL_CHECK_TENANT_KEYS=CAT,FISH → 시간 진행 후 publishCmdToRedisStream 2회, envelope cmd·meta 검증", async () => {
-    process.env.FUEL_CHECK_TENANT_KEYS = "CAT,FISH";
+test("DISCORD_TENANT_MAP=ch1:CAT,ch2:FISH → 시간 진행 후 publishCmdToRedisStream 2회, envelope cmd·meta 검증", async () => {
     process.env.DISCORD_TENANT_MAP = "ch1:CAT,ch2:FISH";
     process.env.DISCORD_GUILD_ID = "guild-1";
     process.env.FUEL_CHECK_HOUR = "0";
@@ -74,7 +73,6 @@ test("FUEL_CHECK_TENANT_KEYS=CAT,FISH → 시간 진행 후 publishCmdToRedisStr
     expect(mockBuildCmdEnvelope.mock.calls[0][0].meta.channelId).toBe("ch1");
     expect(mockBuildCmdEnvelope.mock.calls[1][0].meta.channelId).toBe("ch2");
 
-    delete process.env.FUEL_CHECK_TENANT_KEYS;
     delete process.env.DISCORD_TENANT_MAP;
     delete process.env.DISCORD_GUILD_ID;
     delete process.env.FUEL_CHECK_HOUR;
