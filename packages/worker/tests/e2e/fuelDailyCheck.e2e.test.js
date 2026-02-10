@@ -60,11 +60,11 @@ describe("e2e / 연료-일일체크 (fuelDailyCheck)", () => {
         expect(payload.content || payload.embeds?.length > 0).toBeTruthy();
     });
 
-    test("부족 1건 이상 → ok:true, postDiscordWebhook 1회 호출", async () => {
+    test("부족 1건 이상 → ok:true, TENANT_ALERT_WEBHOOK_URL로 임베드 웹후크 1회 호출", async () => {
         const lowDays = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
         mockGetCorporationStructures.mockResolvedValue([structureWithFixedExpires(lowDays)]);
-        const origEnv = process.env.DISCORD_ALERT_WEBHOOK_URL;
-        process.env.DISCORD_ALERT_WEBHOOK_URL = "https://example.com/webhook";
+        const origEnv = process.env.TENANT_ALERT_WEBHOOK_URL;
+        process.env.TENANT_ALERT_WEBHOOK_URL = "https://example.com/tenant-webhook";
         const ctx = { prisma: {}, tenantKey: "CAT" };
         const envelope = {
             id: "env-2",
@@ -77,7 +77,11 @@ describe("e2e / 연료-일일체크 (fuelDailyCheck)", () => {
 
         expect(result.ok).toBe(true);
         expect(mockPostDiscordWebhook).toHaveBeenCalledTimes(1);
-        if (origEnv !== undefined) process.env.DISCORD_ALERT_WEBHOOK_URL = origEnv;
-        else delete process.env.DISCORD_ALERT_WEBHOOK_URL;
+        const [call] = mockPostDiscordWebhook.mock.calls;
+        expect(call[0].url).toBe("https://example.com/tenant-webhook");
+        expect(call[0].payload.embeds).toBeDefined();
+        expect(call[0].payload.embeds[0].title).toContain("연료 부족");
+        if (origEnv !== undefined) process.env.TENANT_ALERT_WEBHOOK_URL = origEnv;
+        else delete process.env.TENANT_ALERT_WEBHOOK_URL;
     });
 });

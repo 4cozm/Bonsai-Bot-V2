@@ -70,6 +70,7 @@ export async function startDtScheduler({ redis, signal }) {
         log.warn("[global:dt] DISCORD_DT_WEBHOOK_URL 미설정 - DT 스케줄러 비활성화");
         return;
     }
+    const slowMinmatarUrl = String(process.env.SLOW_MINMATAR_WEBHOOK_URL || "").trim();
 
     // 부팅 시 서버 버전 1회 캐싱 (메모리 + Redis)
     let baselineVersion = null;
@@ -146,6 +147,16 @@ export async function startDtScheduler({ redis, signal }) {
                                 url: dtWebhookUrl,
                                 payload: { content },
                             });
+                            if (slowMinmatarUrl) {
+                                await postDiscordWebhook({
+                                    url: slowMinmatarUrl,
+                                    payload: { content },
+                                }).catch((e) =>
+                                    log.warn("[global:dt] SLOW_MINMATAR VIP 알림 전송 실패", {
+                                        message: e?.message,
+                                    })
+                                );
+                            }
 
                             log.info("[global:dt] VIP 오픈 알림 전송");
                         }
@@ -187,6 +198,16 @@ export async function startDtScheduler({ redis, signal }) {
                         url: dtWebhookUrl,
                         payload: { content },
                     });
+                    if (slowMinmatarUrl) {
+                        await postDiscordWebhook({
+                            url: slowMinmatarUrl,
+                            payload: { content },
+                        }).catch((e) =>
+                            log.warn("[global:dt] SLOW_MINMATAR 오픈 알림 전송 실패", {
+                                message: e?.message,
+                            })
+                        );
+                    }
                     log.info("[global:dt] 서버 오픈 알림 전송");
 
                     // 화요일은 무료 스킬포인트 알림 (별도 웹훅)
