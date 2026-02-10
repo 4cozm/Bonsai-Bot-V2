@@ -13,7 +13,8 @@ const log = logger();
 const DEFAULT_ALERT_DAYS = 30;
 
 /**
- * 연료-일일체크: 스케줄에서 호출. 연료 부족 건물만 웹후크, 전부 안전 시 채널 브로드캐스트 메타 반환.
+ * 연료-일일체크: 스케줄에서 호출. 연료 부족 건물은 TENANT_ALERT_WEBHOOK_URL로 임베드 웹후크,
+ * 전부 안전 시 채널 브로드캐스트 메타 반환.
  */
 export default {
     name: "연료-일일체크",
@@ -32,7 +33,7 @@ export default {
         const meta = envelope?.meta ?? {};
         const channelId = String(meta.channelId ?? "").trim();
         const guildId = String(meta.guildId ?? "").trim();
-        const webhookUrl = String(process.env.DISCORD_ALERT_WEBHOOK_URL ?? "").trim();
+        const webhookUrl = String(process.env.TENANT_ALERT_WEBHOOK_URL ?? "").trim();
         const alertDays = Number(process.env.FUEL_ALERT_DAYS ?? DEFAULT_ALERT_DAYS);
 
         if (!prisma) {
@@ -42,19 +43,6 @@ export default {
 
         const pairs = parseAnchorCharIds(process.env.EVE_ANCHOR_CHARIDS);
         if (pairs.length === 0) {
-            if (webhookUrl) {
-                try {
-                    await postDiscordWebhook({
-                        url: webhookUrl,
-                        payload: {
-                            content:
-                                "연료 일일체크: 연료 조회용 캐릭터 설정이 없습니다. (EVE_ANCHOR_CHARIDS)",
-                        },
-                    });
-                } catch (e) {
-                    log.warn("[cmd:연료-일일체크] 웹후크 전송 실패", { message: e?.message });
-                }
-            }
             return {
                 ok: false,
                 data: { error: "연료 조회용 캐릭터 설정이 없습니다. (EVE_ANCHOR_CHARIDS)" },
@@ -76,19 +64,6 @@ export default {
         }
 
         if (allStructures.length === 0) {
-            if (webhookUrl) {
-                try {
-                    await postDiscordWebhook({
-                        url: webhookUrl,
-                        payload: {
-                            content:
-                                "스트럭쳐 연료량 자동 검사중 스트럭쳐 정보를 가져오지 못했어요. ESI가 아플지두?..",
-                        },
-                    });
-                } catch (e) {
-                    log.warn("[cmd:연료-일일체크] 웹후크 전송 실패", { message: e?.message });
-                }
-            }
             return {
                 ok: false,
                 data: { error: "스트럭쳐 정보가 없어요. 나중에 다시 시도해 주세요." },
@@ -116,16 +91,39 @@ export default {
         }
 
         if (lowStructures.length > 0) {
+            // /연료 명령어와 동일한 임베드 형식으로 웹후크 전송
             if (webhookUrl) {
-                const lines = lowStructures.map(
-                    (s) => `연료가 ${s.remainingDays}일 남았습니다 ${s.name}(${s.displayType})`
-                );
+                lowStructures.sort((a, b) => (b.name ?? "").localeCompare(a.name ?? "", "ko"));
+
+                const nameValue = lowStructures.map((r) => r.name).join("\n") || "정보 없음";
+                const typeValue = lowStructures.map((r) => r.displayType).join("\n") || "정보 없음";
+                const daysValue =
+                    lowStructures
+                        .map((r) => {
+                            const d = r.remainingDays;
+                            const statusEmoji =
+                                d <= 0 ? "⚫" : d <= 10 ? "🔴" : d <= 30 ? "🟡" : "🟢";
+                            const daysText = d <= 0 ? "뒤짐" : `${d}일`;
+                            return `${statusEmoji} ${daysText}`;
+                        })
+                        .join("\n") || "정보 없음";
+
+                const embed = {
+                    title: "⚠️ 연료 부족 알림",
+                    description: `연료가 ${alertDays}일 이하로 남은 건물이 ${lowStructures.length}개 있습니다.`,
+                    fields: [
+                        { name: "건물 이름", value: nameValue, inline: true },
+                        { name: "건물 유형", value: typeValue, inline: true },
+                        { name: "⏳ 남은 일수", value: daysValue, inline: true },
+                    ],
+                    color: 0xff0000, // 빨강 — 경고
+                    timestamp: new Date().toISOString(),
+                };
+
                 try {
                     await postDiscordWebhook({
                         url: webhookUrl,
-                        payload: {
-                            content: lines.join("\n"),
-                        },
+                        payload: { embeds: [embed] },
                     });
                 } catch (e) {
                     log.warn("[cmd:연료-일일체크] 웹후크 전송 실패", { message: e?.message });

@@ -58,7 +58,7 @@ function getTenantToChannelMap() {
 }
 
 /**
- * 매일 9시 연료 일일체크 명령을 각 테넌트 Worker에 발행.
+ * 매일 KST 21시(UTC 12시) 연료 일일체크 명령을 각 테넌트 Worker에 발행.
  * - tenant 목록은 DISCORD_TENANT_MAP (channelId:tenantKey,...) 에서 추출.
  * - prod에서만 초기화 시 기동 (isDev면 미등록).
  * - envelope.meta에 channelId, guildId 포함하여 Worker가 "전부 안전" 시 Master 브로드캐스트 요청 가능.
@@ -72,7 +72,8 @@ export async function startFuelCheckScheduler({ redis, signal }) {
     }
     const guildId = String(process.env.DISCORD_GUILD_ID ?? "").trim();
 
-    const hour = Number(process.env.FUEL_CHECK_HOUR ?? 9);
+    // 기본값: KST 21:00 = UTC 12:00 (서버는 UTC 기준)
+    const hour = Number(process.env.FUEL_CHECK_HOUR ?? 12);
     const minute = Number(process.env.FUEL_CHECK_MINUTE ?? 0);
 
     log.info(

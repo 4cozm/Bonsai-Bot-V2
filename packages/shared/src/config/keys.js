@@ -57,7 +57,6 @@ export const ENV_REQUIRED = Object.freeze({
             "EVE_ESI_CLIENT_SECRET",
             "EVE_ESI_REDIRECT_URI",
             "EVE_ESI_SCOPE",
-            "DISCORD_ALERT_WEBHOOK_URL",
         ]),
     }),
 
@@ -75,6 +74,7 @@ export const ENV_REQUIRED = Object.freeze({
             "DISCORD_DT_WEBHOOK_URL",
             "DISCORD_IT_PING_WEBHOOK_URL",
             "DISCORD_ALERT_WEBHOOK_URL",
+            "SLOW_MINMATAR_WEBHOOK_URL",
             "ESI_STATE_SECRET",
             "EVE_ESI_CLIENT_ID",
             "EVE_ESI_CLIENT_SECRET",
@@ -88,7 +88,10 @@ export const ENV_REQUIRED = Object.freeze({
  * 테넌트 워커 전용. Vault에 {TENANT}-{KEY}(예: CAT-EVE-ANCHOR-CHARIDS)로 저장.
  * 오케스트레이터 및 TENANT=global 워커는 사용하지 않음(worker 초기화에서 tenantKeys를 빈 배열로 덮어씀).
  */
-export const WORKER_TENANT_REQUIRED = Object.freeze(["EVE_ANCHOR_CHARIDS"]);
+export const WORKER_TENANT_REQUIRED = Object.freeze([
+    "EVE_ANCHOR_CHARIDS",
+    "TENANT_ALERT_WEBHOOK_URL",
+]);
 
 //--------------------------------------------------------
 
