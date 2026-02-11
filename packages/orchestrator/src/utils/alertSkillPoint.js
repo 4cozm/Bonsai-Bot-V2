@@ -23,19 +23,28 @@ export async function alertSkillPointIfTuesday() {
     }
 
     const payloadWithSticker = {
-        content: "화요일 DT 이후 무료 스킬포인트가 활성화됩니다.",
-        sticker_ids: [SKILLPOINT_STICKER_ID],
+        content:
+            "https://media.discordapp.net/stickers/1468569191731826833.webp?size=240&quality=lossless", //스포 스티커
     };
 
+    let resolvedPayload = payloadWithSticker;
     try {
         await postDiscordWebhook({ url, payload: payloadWithSticker });
         log.info("[global:skill] 스킬포인트 알림(스티커 포함) 전송 완료");
     } catch (e) {
         log.warn(`[global:skill] 스티커 전송 실패 - 텍스트로 재시도 (${e?.message || e})`);
-        await postDiscordWebhook({
-            url,
-            payload: { content: payloadWithSticker.content },
-        });
+        resolvedPayload = { content: payloadWithSticker.content };
+        await postDiscordWebhook({ url, payload: resolvedPayload });
         log.info("[global:skill] 스킬포인트 알림(텍스트) 전송 완료");
+    }
+
+    const slowMinmatarUrl = String(process.env.SLOW_MINMATAR_WEBHOOK_URL || "").trim();
+    if (slowMinmatarUrl) {
+        try {
+            await postDiscordWebhook({ url: slowMinmatarUrl, payload: resolvedPayload });
+            log.info("[global:skill] 스킬포인트 알림 SLOW_MINMATAR 웹후크 전송 완료");
+        } catch (e) {
+            log.warn("[global:skill] SLOW_MINMATAR 웹후크 전송 실패", { message: e?.message || e });
+        }
     }
 }
