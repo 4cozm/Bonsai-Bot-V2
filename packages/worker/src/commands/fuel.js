@@ -126,10 +126,12 @@ export default {
             const { name, fuel_expires, type_id } = structure;
             const expiresDate = new Date(fuel_expires);
             const remainingDays = Math.ceil((expiresDate - now) / (1000 * 60 * 60 * 24));
-            const buildingType = structureTypeMapping[type_id] || {
+            const typeId = Number(type_id);
+            const buildingType = structureTypeMapping[typeId] || {
                 name: "알 수 없음",
                 emoji: ":question:",
             };
+            // 디스코드 커스텀 이모지는 <:이름:숫자ID> 형식이어야 렌더됨 (structureTypeMapping에 ID 포함)
             const displayType = `${buildingType.emoji} ${buildingType.name}`;
             return { name, type: displayType, remainingDays };
         });
