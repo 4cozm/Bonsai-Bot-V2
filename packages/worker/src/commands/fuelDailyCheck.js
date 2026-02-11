@@ -77,11 +77,10 @@ export default {
             const expiresDate = new Date(fuel_expires);
             const remainingDays = Math.ceil((expiresDate - now) / (1000 * 60 * 60 * 24));
             if (remainingDays <= alertDays) {
-                const buildingType = structureTypeMapping[type_id] || {
-                    name: "알 수 없음",
-                    emoji: ":question:",
-                };
-                const displayType = `${buildingType.emoji} ${buildingType.name}`;
+                const typeId = Number(type_id);
+                const buildingType = structureTypeMapping[typeId] || { name: "알 수 없음" };
+                // 9시 웹후크 알림은 이모지 미지원이므로 건물명만 표시
+                const displayType = buildingType.name;
                 lowStructures.push({
                     name,
                     displayType,
