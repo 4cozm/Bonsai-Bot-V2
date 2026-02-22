@@ -8,6 +8,7 @@ import {
     logger,
     postDiscordWebhook,
 } from "@bonsai/shared";
+import { structureTypeMapping } from "../esi/structureTypeMapping.js";
 
 const ESI_NOTIFICATIONS_BASE = "https://esi.evetech.net/latest/characters";
 const REDIS_KEY_PREFIX = "bonsai:structure_alert:max_notification_id";
@@ -49,28 +50,64 @@ async function fetchCharacterNotifications(characterId, accessToken) {
 }
 
 /**
+ * notification.text에서 키 하나 파싱 (key: value 형식, 한 줄)
+ * @param {string} text
+ * @param {string} key - 예: "structureTypeID", "typeID"
+ * @returns {string | null}
+ */
+function parseTextKey(text, key) {
+    const re = new RegExp(`${key}:\\s*(.+)`);
+    const m = String(text ?? "").match(re);
+    const raw = m ? m[1].trim() : null;
+    if (raw == null || raw === "") return null;
+    return raw;
+}
+
+/**
  * 알림 타입별 Discord 웹후크 전송.
  * 멘션(@everyone)은 content에 넣어야 알림이 트리거됨. 임베드 안의 멘션은 Discord 정책상 알림을 주지 않음.
+ * 테넌트·건물 정보를 임베드에 넣어 어떤 건물인지 구분 가능하게 함.
  * @param {{ url: string, log: { warn: Function } }} params
  * @param {string} type - TowerAlertMsg | StructureUnderAttack | StructureLostShields | StructureLostArmor
- * @param {string} [text] - notification.text (StructureUnderAttack 시 파싱용)
+ * @param {string} [text] - notification.text (StructureUnderAttack 등 파싱용)
+ * @param {string} [tenantKey] - 테넌트 식별자 (CAT, FISH 등)
  */
-async function sendAlertEmbed({ url, log }, type, text = "") {
+async function sendAlertEmbed({ url, log }, type, text = "", tenantKey = "") {
     if (!url) {
         log.warn("[structure-attack-alert] DISCORD_ALERT_WEBHOOK_URL 미설정 - 전송 스킵");
         return;
     }
 
+    const tenantLabel = tenantKey ? `테넌트: **${tenantKey}**` : "";
+
     let embed;
     switch (type) {
-        case "TowerAlertMsg":
+        case "TowerAlertMsg": {
+            const typeIdRaw = parseTextKey(text, "typeID");
+            const structureTypeName =
+                typeIdRaw && structureTypeMapping[Number(typeIdRaw)]
+                    ? structureTypeMapping[Number(typeIdRaw)].name
+                    : null;
+            const detailParts = [tenantLabel];
+            if (structureTypeName) detailParts.push(`유형: ${structureTypeName}`);
             embed = {
                 title: "포스 공격 알림",
                 description: "포스가 공격받고 있습니다.",
+                fields: [
+                    {
+                        name: "세부 정보",
+                        value:
+                            detailParts.length > 1
+                                ? detailParts.join(" · ")
+                                : detailParts[0] || "—",
+                        inline: false,
+                    },
+                ],
                 color: 0xff0000,
                 timestamp: new Date().toISOString(),
             };
             break;
+        }
         case "StructureUnderAttack": {
             const corpMatch = text.match(/corpName: (.+)/);
             const shieldMatch = text.match(/shieldPercentage: ([\d.]+)/);
@@ -86,10 +123,23 @@ async function sendAlertEmbed({ url, log }, type, text = "") {
             const shield = shieldMatch ? parseInt(shieldMatch[1], 10) : null;
             const armor = armorMatch ? parseInt(armorMatch[1], 10) : null;
             const hull = hullMatch ? parseInt(hullMatch[1], 10) : null;
+            const structureTypeIdRaw = parseTextKey(text, "structureTypeID");
+            const structureTypeName =
+                structureTypeIdRaw && structureTypeMapping[Number(structureTypeIdRaw)]
+                    ? structureTypeMapping[Number(structureTypeIdRaw)].name
+                    : null;
+            const detailParts = [];
+            if (tenantLabel) detailParts.push(tenantLabel);
+            if (structureTypeName) detailParts.push(`건물 유형: ${structureTypeName}`);
             embed = {
                 title: "건물 공격 알림",
                 description: "건물이 공격받고 있습니다.",
                 fields: [
+                    {
+                        name: "건물",
+                        value: detailParts.length > 0 ? detailParts.join(" · ") : "—",
+                        inline: false,
+                    },
                     { name: "공격자 코퍼레이션", value: corpName, inline: true },
                     {
                         name: "남은 실드",
@@ -112,22 +162,58 @@ async function sendAlertEmbed({ url, log }, type, text = "") {
             };
             break;
         }
-        case "StructureLostShields":
+        case "StructureLostShields": {
+            const structureTypeIdRaw = parseTextKey(text, "structureTypeID");
+            const structureTypeName =
+                structureTypeIdRaw && structureTypeMapping[Number(structureTypeIdRaw)]
+                    ? structureTypeMapping[Number(structureTypeIdRaw)].name
+                    : null;
+            const detailParts = [tenantLabel];
+            if (structureTypeName) detailParts.push(`유형: ${structureTypeName}`);
             embed = {
                 title: "건물 실드 파괴",
                 description: "건물 실드가 파괴되었습니다.",
+                fields: [
+                    {
+                        name: "세부 정보",
+                        value:
+                            detailParts.length > 1
+                                ? detailParts.join(" · ")
+                                : detailParts[0] || "—",
+                        inline: false,
+                    },
+                ],
                 color: 0xff0000,
                 timestamp: new Date().toISOString(),
             };
             break;
-        case "StructureLostArmor":
+        }
+        case "StructureLostArmor": {
+            const structureTypeIdRaw = parseTextKey(text, "structureTypeID");
+            const structureTypeName =
+                structureTypeIdRaw && structureTypeMapping[Number(structureTypeIdRaw)]
+                    ? structureTypeMapping[Number(structureTypeIdRaw)].name
+                    : null;
+            const detailParts = [tenantLabel];
+            if (structureTypeName) detailParts.push(`유형: ${structureTypeName}`);
             embed = {
                 title: "건물 아머 파괴",
                 description: "건물 아머가 파괴되었습니다.",
+                fields: [
+                    {
+                        name: "세부 정보",
+                        value:
+                            detailParts.length > 1
+                                ? detailParts.join(" · ")
+                                : detailParts[0] || "—",
+                        inline: false,
+                    },
+                ],
                 color: 0xff0000,
                 timestamp: new Date().toISOString(),
             };
             break;
+        }
         default:
             return;
     }
@@ -193,7 +279,12 @@ async function processCharacterNotifications({ redis, prisma, tenantKey, charact
         if (notification.notification_id <= maxId) break;
 
         const notificationType = notification.type || "";
-        await sendAlertEmbed({ url: webhookUrl, log }, notificationType, notification.text ?? "");
+        await sendAlertEmbed(
+            { url: webhookUrl, log },
+            notificationType,
+            notification.text ?? "",
+            tenantKey
+        );
         processedMax = Math.max(processedMax, notification.notification_id);
     }
 
