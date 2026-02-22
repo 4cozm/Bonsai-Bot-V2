@@ -49,7 +49,8 @@ async function fetchCharacterNotifications(characterId, accessToken) {
 }
 
 /**
- * 알림 타입별 Discord 임베드 생성 후 웹후크 전송
+ * 알림 타입별 Discord 웹후크 전송.
+ * 멘션(@everyone)은 content에 넣어야 알림이 트리거됨. 임베드 안의 멘션은 Discord 정책상 알림을 주지 않음.
  * @param {{ url: string, log: { warn: Function } }} params
  * @param {string} type - TowerAlertMsg | StructureUnderAttack | StructureLostShields | StructureLostArmor
  * @param {string} [text] - notification.text (StructureUnderAttack 시 파싱용)
@@ -65,7 +66,7 @@ async function sendAlertEmbed({ url, log }, type, text = "") {
         case "TowerAlertMsg":
             embed = {
                 title: "포스 공격 알림",
-                description: "@everyone 포스가 공격받고 있습니다.",
+                description: "포스가 공격받고 있습니다.",
                 color: 0xff0000,
                 timestamp: new Date().toISOString(),
             };
@@ -87,7 +88,7 @@ async function sendAlertEmbed({ url, log }, type, text = "") {
             const hull = hullMatch ? parseInt(hullMatch[1], 10) : null;
             embed = {
                 title: "건물 공격 알림",
-                description: "@everyone 건물이 공격받고 있습니다!",
+                description: "건물이 공격받고 있습니다.",
                 fields: [
                     { name: "공격자 코퍼레이션", value: corpName, inline: true },
                     {
@@ -114,7 +115,7 @@ async function sendAlertEmbed({ url, log }, type, text = "") {
         case "StructureLostShields":
             embed = {
                 title: "건물 실드 파괴",
-                description: "@everyone 건물 실드가 파괴되었습니다.",
+                description: "건물 실드가 파괴되었습니다.",
                 color: 0xff0000,
                 timestamp: new Date().toISOString(),
             };
@@ -122,7 +123,7 @@ async function sendAlertEmbed({ url, log }, type, text = "") {
         case "StructureLostArmor":
             embed = {
                 title: "건물 아머 파괴",
-                description: "@everyone 건물 아머가 파괴되었습니다.",
+                description: "건물 아머가 파괴되었습니다.",
                 color: 0xff0000,
                 timestamp: new Date().toISOString(),
             };
@@ -131,8 +132,11 @@ async function sendAlertEmbed({ url, log }, type, text = "") {
             return;
     }
 
+    // content에 @everyone을 넣어야 실제 멘션 알림이 감. 임베드 안 멘션은 알림 미트리거(Discord 문서)
+    const payload = { content: "@everyone", embeds: [embed] };
+
     try {
-        await postDiscordWebhook({ url, payload: { embeds: [embed] } });
+        await postDiscordWebhook({ url, payload });
     } catch (e) {
         log.warn("[structure-attack-alert] 웹후크 전송 실패", { message: e?.message });
     }
