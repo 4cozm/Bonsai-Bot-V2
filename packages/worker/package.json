@@ -10,6 +10,7 @@
         "@aws-sdk/client-sqs": "^3.978.0",
         "@bonsai/shared": "*",
         "@bonsai/external": "*",
-        "mysql2": "^3.16.3"
+        "mysql2": "^3.16.3",
+        "node-cron": "^4.2.1"
     }
 }
