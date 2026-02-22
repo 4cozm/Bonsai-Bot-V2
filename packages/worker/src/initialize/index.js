@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { runAutocompleteConsumer } from "../bus/autocompleteConsumer.js";
 import { runRedisStreamsCommandConsumer } from "../bus/redisStreamsCommandConsumer.js";
 import { ensureTenantDbAndMigrate, getPrisma } from "../db/prisma.js";
+import { startStructureAttackAlertScheduler } from "../schedulers/structureAttackAlertScheduler.js";
 
 const DB_CONNECT_RETRY_ATTEMPTS = 10;
 const DB_CONNECT_RETRY_DELAY_MS = 10_000;
@@ -138,6 +139,17 @@ export async function initializeWorker(opts = {}) {
             tenantKey,
             signal: ac.signal,
         }).catch((err) => log.warn("[worker:init] autocomplete consumer 비정상 종료", err));
+    }
+
+    // isDev면 건물 공격 알림 cron 미등록
+    if (tenantKey !== "global" && !isDev) {
+        startStructureAttackAlertScheduler({
+            redis,
+            prisma,
+            tenantKey,
+            signal: ac.signal,
+            log,
+        });
     }
 
     await runRedisStreamsCommandConsumer({

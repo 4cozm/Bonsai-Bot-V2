@@ -70,7 +70,9 @@ export async function routeInteraction(interaction, ctx = {}) {
         }
 
         // 나머지는 전부 prod로 전달(명령 유효성/해석은 worker가 함)
-        if (!redis) throw new Error("redis 주입이 없습니다.");
+        // 발행용으로 acRedis 우선 사용: result consumer(redis)의 XREAD BLOCK과 같은 커넥션을 쓰면 발행이 블로킹에 밀림
+        const pubRedis = acRedis ?? redis;
+        if (!pubRedis) throw new Error("redis 주입이 없습니다.");
         if (!pendingMap) throw new Error("pendingMap 주입이 없습니다.");
 
         const args = serializeOptions(interaction.options);
@@ -90,7 +92,7 @@ export async function routeInteraction(interaction, ctx = {}) {
                 ...(discordNick && { discordNick }),
                 discordReceivedAtMs,
             },
-            { redis }
+            { redis: pubRedis }
         );
 
         pendingMap.set(res.envelopeId, { interaction });
