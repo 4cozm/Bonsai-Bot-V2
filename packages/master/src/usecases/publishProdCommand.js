@@ -16,6 +16,7 @@ const log = logger();
  * @param {string} input.cmd
  * @param {string} [input.args]
  * @param {string} [input.discordNick] - 요청 시점 디스코드 표시명(예: esi-signup용)
+ * @param {string} [input.requesterName] - 호출자 이름(예: 전투집계 임베드용, member.nick)
  * @param {number} [input.discordReceivedAtMs] - Discord 인터랙션 수신 시각(ms, 매트릭용)
  * @param {object} deps
  * @param {import("redis").RedisClientType} deps.redis
@@ -31,6 +32,7 @@ export async function publishProdCommand(input, deps) {
     const cmd = String(input.cmd ?? "").trim();
     const args = input.args == null ? "" : String(input.args);
     const discordNick = input.discordNick != null ? String(input.discordNick).trim() : "";
+    const requesterName = input.requesterName != null ? String(input.requesterName).trim() : "";
     const discordReceivedAtMs =
         typeof input.discordReceivedAtMs === "number" && Number.isFinite(input.discordReceivedAtMs)
             ? input.discordReceivedAtMs
@@ -57,6 +59,7 @@ export async function publishProdCommand(input, deps) {
             guildId,
             channelId,
             ...(discordNick && { discordNick }),
+            ...(requesterName && { requesterName }),
             ...(discordReceivedAtMs != null && { discordReceivedAtMs }),
         },
     });

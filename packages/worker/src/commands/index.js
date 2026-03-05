@@ -1,4 +1,5 @@
 // packages/worker/src/commands/index.js
+import combatAggregation from "./combatAggregation.js";
 import dev from "./dev.js";
 import esiComplete from "./esiComplete.js";
 import esiList from "./esiList.js";
@@ -20,6 +21,7 @@ export function getCommandDefinitions() {
         fuelDailyCheck,
         marketPrice,
         fleetCommander,
+        combatAggregation,
     ];
 }
 

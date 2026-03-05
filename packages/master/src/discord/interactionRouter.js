@@ -81,6 +81,7 @@ export async function routeInteraction(interaction, ctx = {}) {
             interaction.member?.displayName ??
             interaction.user?.username ??
             "";
+        const requesterName = interaction.member?.nick ?? interaction.member?.nickname ?? "";
 
         const res = await publishProdCommand(
             {
@@ -90,6 +91,7 @@ export async function routeInteraction(interaction, ctx = {}) {
                 cmd: cmdName,
                 args,
                 ...(discordNick && { discordNick }),
+                ...(requesterName && { requesterName }),
                 discordReceivedAtMs,
             },
             { redis: pubRedis }
