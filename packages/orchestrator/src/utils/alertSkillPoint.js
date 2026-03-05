@@ -3,9 +3,6 @@ import { postDiscordWebhook } from "./postDiscordWebhook.js";
 
 const log = logger();
 
-// 매주 화요일 DT 직후 무료 스킬포인트 알림
-const SKILLPOINT_STICKER_ID = "1468569230336200836";
-
 /**
  * 화요일이면 스킬포인트 알림을 별도 웹훅으로 전송한다.
  * - Discord가 sticker_ids를 거부할 수 있으므로 실패해도 content만 재시도한다.

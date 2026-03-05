@@ -50,6 +50,7 @@ export const ENV_REQUIRED = Object.freeze({
             "TENANT_DB_URL_TEMPLATE",
             "DATABASE_URL",
             "MYSQL_ADMIN_URL",
+            "DISCORD_TO_PF_HMAC",
         ]),
         dev: Object.freeze([]),
         prod: Object.freeze([
