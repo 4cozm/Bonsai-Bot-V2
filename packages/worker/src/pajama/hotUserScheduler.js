@@ -166,12 +166,16 @@ async function runHotUserClassification({ prisma, redis, tenantKey }) {
  *
  * @param {{ prisma: object, redis: object, tenantKey: string, signal?: AbortSignal }} opts
  */
+/** 핫 유저 분류 실행 시각 — KST 05:00 = UTC 20:00 (하드코딩) */
+const HOT_CHECK_HOUR = 20;
+const HOT_CHECK_MINUTE = 0;
+
 export function startHotUserScheduler({ prisma, redis, tenantKey, signal }) {
-    const hour = Number(process.env.PAJAMA_CHECK_HOUR ?? 20);
-    const minute = Number(process.env.PAJAMA_CHECK_MINUTE ?? 0);
+    const hour = HOT_CHECK_HOUR;
+    const minute = HOT_CHECK_MINUTE;
 
     log.info(
-        `[pajama:hot] 핫 유저 스케줄 등록 (매일 UTC ${hour}:${String(minute).padStart(2, "0")})`
+        `[pajama:hot] 핫 유저 스케줄 등록 (매일 UTC ${hour}:${String(minute).padStart(2, "0")} / KST 05:00)`
     );
 
     // 부팅 시 즉시 1회 실행
