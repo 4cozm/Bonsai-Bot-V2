@@ -91,7 +91,6 @@ export const ENV_REQUIRED = Object.freeze({
 export const WORKER_TENANT_REQUIRED = Object.freeze([
     "EVE_ANCHOR_CHARIDS",
     "TENANT_ALERT_WEBHOOK_URL",
-    "CA_IMPLANT_TYPE_IDS",
 ]);
 
 //--------------------------------------------------------
