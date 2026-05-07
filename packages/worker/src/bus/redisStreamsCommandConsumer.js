@@ -70,15 +70,53 @@ export async function runRedisStreamsCommandConsumer({
 
     while (!signal?.aborted) {
         try {
-            // BLOCK으로 대기하되, 무한 블락 대신 5초 단위로 끊어서 abort를 반영한다.
+            // 1. DLQ: 10초 이상 방치된 메시지 최대 1개 회수
+            let messagesToProcess = [];
+            try {
+                const autoClaimRes = await redis.xAutoClaim(streamKey, group, consumer, 10000, "0-0", { COUNT: 1 });
+                const recoveredMessages = autoClaimRes?.messages || [];
+
+                for (const m of recoveredMessages) {
+                    const pendingInfo = await redis.xPendingRange(streamKey, group, m.id, m.id, 1);
+                    const deliveryCount = pendingInfo?.[0]?.deliveriesCounter ?? 1;
+
+                    if (deliveryCount >= 2) {
+                        log.warn(
+                            `[DLQ] 독약 메시지 감지 및 영구 폐기. tenant=${t} entryId=${m.id} payload=${m.message?.payload} deliveryCount=${deliveryCount}`
+                        );
+                        await redis.xAck(streamKey, group, m.id);
+                    } else {
+                        log.error(
+                            `[DLQ] 미처리 메시지 회수 및 재시도 (1회 실패). tenant=${t} entryId=${m.id} deliveryCount=${deliveryCount}`
+                        );
+                        messagesToProcess.push(m);
+                    }
+                }
+            } catch (err) {
+                log.error(`[worker:redis] xAutoClaim 실패: ${err?.message ?? String(err)}`);
+            }
+
+            // 2. 새 메시지 대기 (회수된 메시지가 있으면 즉시 반환되도록 BLOCK 1ms 적용)
+            const blockTime = messagesToProcess.length > 0 ? 1 : 5000;
             const res = await redis.xReadGroup(group, consumer, [{ key: streamKey, id: ">" }], {
-                COUNT: 10,
-                BLOCK: 5000,
+                COUNT: 1, // Blast Radius 격리를 위해 1로 축소
+                BLOCK: blockTime,
             });
 
-            if (!res || res.length === 0) continue;
+            if (res && res.length > 0) {
+                for (const stream of res) {
+                    if (stream.messages) {
+                        messagesToProcess.push(...stream.messages);
+                    }
+                }
+            }
 
-            for (const stream of res) {
+            if (messagesToProcess.length === 0) continue;
+
+            // 기존 중첩 루프 호환을 위한 가짜(Synthetic) stream 객체 배열
+            const syntheticRes = [{ messages: messagesToProcess }];
+
+            for (const stream of syntheticRes) {
                 const messages = stream.messages ?? [];
                 for (const m of messages) {
                     const entryId = m.id;
