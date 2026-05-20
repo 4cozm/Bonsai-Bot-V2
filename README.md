@@ -72,46 +72,39 @@ sequenceDiagram
     autonumber
     actor User as Discord User
     participant Discord as Discord Server
-    participant Master as Master Tenant (EC2)
-    participant Redis as Redis (Streams / List)
-    participant Worker as Worker Tenant (EC2)
-    participant DB as MySQL (Prisma)
+    participant Master as Master Tenant EC2
+    participant Redis as Redis Streams and List
+    participant Worker as Worker Tenant EC2
+    participant DB as MySQL Prisma
 
-    %% 일반 명령어 처리 흐름 (Deferred Command Flow)
-    rect rgb(230, 245, 255)
-        note right of User: 일반 명령어 처리 흐름 (비동기 Deferred Flow)
-        User->>Discord: /명령어 입력 (예: /캐릭터 정보)
-        Discord->>Master: Interaction (ChatInputCommand)
-        Master->>Discord: 1. Defer Reply (3초 제한 돌파, 대기 상태 설정)
-        Master->>Redis: 2. XADD bonsai:cmd:{tenantKey} (Envelope 발행)
-        Note over Master, Redis: Master는 pendingMap에 Interaction을 등록하고 대기
+    note over User,DB: 일반 명령어 처리 흐름 - 비동기 Deferred Flow
+    User->>Discord: /명령어 입력
+    Discord->>Master: Interaction ChatInputCommand
+    Master->>Discord: 1. Defer Reply - 3초 제한 돌파
+    Master->>Redis: 2. XADD bonsai:cmd:tenantKey - Envelope 발행
+    Note over Master,Redis: pendingMap에 Interaction 등록 후 대기
 
-        Redis->>Worker: 3. XREADGROUP (Command Consumer)
-        Worker->>DB: 4. 비즈니스 로직 처리 (조회 / 갱신)
-        Worker->>Redis: 5. XADD bonsai:result (Result Envelope 발행)
-        Worker->>Redis: 6. XACK (명령 스트림 소비 완료)
+    Redis->>Worker: 3. XREADGROUP - Command Consumer
+    Worker->>DB: 4. 비즈니스 로직 처리
+    Worker->>Redis: 5. XADD bonsai:result - Result Envelope 발행
+    Worker->>Redis: 6. XACK - 명령 스트림 소비 완료
 
-        Redis->>Master: 7. XREADGROUP (Result Consumer 결과 획득)
-        Master->>Discord: 8. editReply (최종 응답 전달)
-        Discord->>User: 결과 화면 렌더링
-    end
+    Redis->>Master: 7. XREADGROUP - Result Consumer 결과 획득
+    Master->>Discord: 8. editReply - 최종 응답 전달
+    Discord->>User: 결과 화면 렌더링
 
-    %% Autocomplete Fast-Path 흐름
-    rect rgb(240, 255, 240)
-        note right of User: Autocomplete 초고속 경로 (Fast-Path Flow)
-        User->>Discord: 입력창에 타이핑 시작 (포커스 값 변경)
-        Discord->>Master: Interaction (Autocomplete)
-        Master->>Redis: 1. RPUSH bonsai:ac:{tenantKey} (Fast-Path 요청)
+    note over User,DB: Autocomplete 초고속 경로 - Fast-Path Flow
+    User->>Discord: 입력창에 타이핑 시작
+    Discord->>Master: Interaction Autocomplete
+    Master->>Redis: 1. RPUSH bonsai:ac:tenantKey - Fast-Path 요청
+    Note over Master,Redis: 50ms 간격으로 결과 캐시 폴링 시작 - 최대 2.5초
+    Redis->>Worker: 2. BLPOP - Autocomplete Consumer 즉시 획득
+    Worker->>DB: 3. 캐릭터명 인덱스 기반 빠른 검색
+    Worker->>Redis: 4. SET bonsai:ac:res:requestId - 결과 임시 캐싱 EX 10
 
-        Note over Master, Redis: Master는 50ms 간격으로 결과 캐시 폴링 시작 (최대 2.5초)
-        Redis->>Worker: 2. BLPOP (Autocomplete Consumer 즉시 획득)
-        Worker->>DB: 3. DB 캐릭터명/인덱스 기반 빠른 검색
-        Worker->>Redis: 4. SET bonsai:ac:res:{requestId} (결과 임시 캐싱, EX 10)
-
-        Redis->>Master: 5. GET 결과 확인 (폴링 성공)
-        Master->>Discord: 6. respond(choices) (즉각 응답)
-        Discord->>User: 입력창 아래 추천 검색어 리스트 노출
-    end
+    Redis->>Master: 5. GET 결과 확인 - 폴링 성공
+    Master->>Discord: 6. respond choices - 즉각 응답
+    Discord->>User: 입력창 아래 추천 검색어 리스트 노출
 ```
 
 ---
@@ -134,9 +127,9 @@ sequenceDiagram
             Schema["Prisma Schema / Database"]
         end
 
-        W1 -- "1. prisma migrate deploy (실행)" --> Schema
-        W2 -- "2. prisma migrate deploy (동시 실행)" --> Schema
-        Schema -- "3. 중복 DDL 수행" --> Crash["❌ DB Lock & 스키마 충돌 발생"]
+        W1 -- "1. migrate deploy 실행" --> Schema
+        W2 -- "2. migrate deploy 동시 실행" --> Schema
+        Schema -- "3. 중복 DDL 수행" --> Crash["DB Lock - 스키마 충돌 발생"]
     ```
 
 - **기술적 해결 전략**:
