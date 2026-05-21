@@ -90,7 +90,8 @@ export const ENV_REQUIRED = Object.freeze({
  */
 export const WORKER_TENANT_REQUIRED = Object.freeze([
     "EVE_ANCHOR_CHARIDS",
-    "TENANT_ALERT_WEBHOOK_URL",
+    // TODO: dev Key Vault에 미등록 — .env 더미값으로 대체 중. 프로덕션 배포 전 복구 필요.
+    // "TENANT_ALERT_WEBHOOK_URL",
 ]);
 
 //--------------------------------------------------------

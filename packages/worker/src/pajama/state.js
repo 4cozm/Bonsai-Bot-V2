@@ -48,42 +48,5 @@ export function makePajamaState(redis, tenantKey) {
         }
     };
 
-    /**
-     * 리스트에 id 추가 (중복 무시).
-     * @param {"hot"|"target"|"structures"|"online"|"docking"} type
-     * @param {string|number|bigint} id
-     */
-    const addToList = async (type, id) => {
-        const list = await getList(type);
-        const str = String(id);
-        if (!list.includes(str)) {
-            list.push(str);
-            await setList(type, list);
-        }
-    };
-
-    /**
-     * 리스트에서 id 제거.
-     * @param {"hot"|"target"|"structures"|"online"|"docking"} type
-     * @param {string|number|bigint} id
-     */
-    const removeFromList = async (type, id) => {
-        const list = await getList(type);
-        const str = String(id);
-        const filtered = list.filter((item) => item !== str);
-        await setList(type, filtered);
-    };
-
-    /**
-     * id가 리스트에 포함되어 있는지 확인.
-     * @param {"hot"|"target"|"structures"|"online"|"docking"} type
-     * @param {string|number|bigint} id
-     * @returns {Promise<boolean>}
-     */
-    const isInList = async (type, id) => {
-        const list = await getList(type);
-        return list.includes(String(id));
-    };
-
-    return { getList, setList, addToList, removeFromList, isInList };
+    return { getList, setList };
 }

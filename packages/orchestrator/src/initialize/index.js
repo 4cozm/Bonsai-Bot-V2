@@ -5,6 +5,7 @@ import { runRedisStreamsGlobalConsumer } from "../bus/redisStreamsGlobalConsumer
 import { startEsiCallbackServer } from "../esi/esiCallbackServer.js";
 import { startDtScheduler } from "../schedulers/dtScheduler.js";
 import { startFuelCheckScheduler } from "../schedulers/fuelCheckScheduler.js";
+import { startPajamaHotScheduler } from "../schedulers/pajamaHotScheduler.js";
 
 const VAULT_URL_DEV = "https://bonsai-bot-dev.vault.azure.net/";
 const VAULT_URL_PROD = "https://bonsai-bot.vault.azure.net/";
@@ -84,6 +85,7 @@ export async function initializeOrchestrator() {
     } else {
         await startDtScheduler({ redis, signal: ac.signal });
         await startFuelCheckScheduler({ redis, signal: ac.signal });
+        await startPajamaHotScheduler({ redis, signal: ac.signal });
     }
 
     await runRedisStreamsGlobalConsumer({

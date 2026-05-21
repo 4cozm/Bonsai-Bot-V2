@@ -27,7 +27,7 @@ async function runDockingPoll({ prisma, redis, tenantKey }) {
 
     if (onlineIds.length === 0 || structureIds.length === 0) return;
 
-    const structureSet = new Set(structureIds);
+    const structureSet = new Set(structureIds.map(String));
     const dockingSet = new Set(dockingIds);
 
     // 온라인이지만 아직 도킹 미확인 유저 (차집합: online - docking)
@@ -41,11 +41,15 @@ async function runDockingPoll({ prisma, redis, tenantKey }) {
 
             const location = await getCharacterLocation(token, charId);
             const structureId = location?.structure_id ? String(location.structure_id) : null;
+            // log.info("[pajama:docking] 위치 조회 결과", { charId, structureId, station_id: location?.station_id ?? null });
 
-            return structureId && structureSet.has(structureId) ? { charId, structureId } : null;
+            return structureId && structureSet.has(structureId)
+                ? { charId, structureId }
+                : null;
         })
     );
 
+    const toAddToDocking = [];
     for (const [i, r] of results.entries()) {
         if (r.status === "rejected") {
             log.warn("[pajama:docking] 위치 조회 실패", {
@@ -55,9 +59,15 @@ async function runDockingPoll({ prisma, redis, tenantKey }) {
             continue;
         }
         if (r.value) {
-            await state.addToList("docking", r.value.charId);
-            log.info("[pajama:docking] 도킹 감지", r.value);
+            toAddToDocking.push(r.value);
         }
+    }
+
+    if (toAddToDocking.length > 0) {
+        const currentDocking = await state.getList("docking");
+        const newDocking = [...new Set([...currentDocking, ...toAddToDocking.map((v) => String(v.charId))])];
+        await state.setList("docking", newDocking);
+        log.info("[pajama:docking] 도킹 감지", { charIds: toAddToDocking.map((v) => v.charId), structureId: toAddToDocking[0]?.structureId });
     }
 }
 

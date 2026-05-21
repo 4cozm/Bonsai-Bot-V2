@@ -1,6 +1,9 @@
 // packages/worker/src/pajama/hotUserScheduler.js
 //
-// 매일 UTC 20:00 (KST 05:00) 실행.
+// "잠옷-핫유저-분류" 커맨드 핸들러 로직.
+// 실행 타이밍은 글로벌 오케스트레이터(pajamaHotScheduler)가 제어한다:
+//   - 오케스트레이터 시작 시 즉시 1회 발행
+//   - 이후 매일 KST 05:00 (UTC 20:00) 반복 발행
 //
 // [핫 유저 분류]
 // DB의 EveCharacter 테이블(봇에 ESI 등록된 캐릭터)을 기준으로,
@@ -8,10 +11,6 @@
 //
 // [스트럭쳐 분류]
 // 앵커콥 토큰으로 콥 소속 스트럭쳐 목록 조회 및 저장.
-//
-// 환경변수:
-//   PAJAMA_CHECK_HOUR   - UTC 기준 실행 시각 (기본: 20)
-//   PAJAMA_CHECK_MINUTE - 실행 분 (기본: 0)
 //
 import { getAccessTokenForCharacter, logger, parseAnchorCharIds } from "@bonsai/shared";
 import { getCorporationStructures } from "../esi/getCorporationStructures.js";
@@ -21,46 +20,12 @@ import { makePajamaState } from "./state.js";
 const log = logger();
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-function scheduleDailyAt({ hour, minute, signal, fn }) {
-    let timer = null;
-
-    const arm = () => {
-        if (signal?.aborted) return;
-
-        const now = new Date(Date.now());
-        const next = new Date(now);
-        next.setUTCHours(hour, minute, 0, 0);
-        if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
-
-        const delay = Math.max(1_000, next.getTime() - now.getTime());
-        timer = setTimeout(async () => {
-            try {
-                await fn();
-            } finally {
-                arm();
-            }
-        }, delay);
-    };
-
-    arm();
-
-    if (signal) {
-        signal.addEventListener(
-            "abort",
-            () => {
-                if (timer) clearTimeout(timer);
-            },
-            { once: true }
-        );
-    }
-}
-
 /**
  * 핫 유저 분류 + 스트럭쳐 목록 갱신 1회 실행.
  *
  * @param {{ prisma: object, redis: object, tenantKey: string }} opts
  */
-async function runHotUserClassification({ prisma, redis, tenantKey }) {
+export async function runHotUserClassification({ prisma, redis, tenantKey }) {
     const state = makePajamaState(redis, tenantKey);
 
     // ── 1) DB에서 ESI 등록된 전체 캐릭터 조회 ──────────────────────────
@@ -160,33 +125,3 @@ async function runHotUserClassification({ prisma, redis, tenantKey }) {
     log.info(`[pajama:hot] 스트럭쳐 목록 갱신 완료: ${structureIds.length}개`);
 }
 
-/**
- * 핫 유저 스케줄러 시작.
- * - 부팅 시 1회 즉시 실행 후 매일 지정 시각(UTC)에 반복.
- *
- * @param {{ prisma: object, redis: object, tenantKey: string, signal?: AbortSignal }} opts
- */
-/** 핫 유저 분류 실행 시각 — KST 05:00 = UTC 20:00 (하드코딩) */
-const HOT_CHECK_HOUR = 20;
-const HOT_CHECK_MINUTE = 0;
-
-export function startHotUserScheduler({ prisma, redis, tenantKey, signal }) {
-    const hour = HOT_CHECK_HOUR;
-    const minute = HOT_CHECK_MINUTE;
-
-    log.info(
-        `[pajama:hot] 핫 유저 스케줄 등록 (매일 UTC ${hour}:${String(minute).padStart(2, "0")} / KST 05:00)`
-    );
-
-    // 부팅 시 즉시 1회 실행
-    runHotUserClassification({ prisma, redis, tenantKey }).catch((err) =>
-        log.warn("[pajama:hot] 초기 분류 실패", { message: err?.message })
-    );
-
-    scheduleDailyAt({
-        hour,
-        minute,
-        signal,
-        fn: () => runHotUserClassification({ prisma, redis, tenantKey }),
-    });
-}

@@ -6,14 +6,14 @@
 //
 import { logger } from "@bonsai/shared";
 import { startDockingPoller } from "./dockingPoller.js";
-import { startHotUserScheduler } from "./hotUserScheduler.js";
 import { startOnlinePoller } from "./onlinePoller.js";
 import { startTargetPoller } from "./targetPoller.js";
 
 const log = logger();
 
-/** CA 임플란트 typeID 목록 (하드코딩) */
-const CA_TYPE_IDS = [2082, 2589, 33393, 33394];
+// CA 임플란트 typeId 하드코딩
+// 2082=WCS I, 2589=WCS II, 33393=Republic Fleet WCS, 33394=Domination WCS
+const CA_TYPE_IDS = Object.freeze([2082, 2589, 33393, 33394]);
 
 /**
  * 잠옷 모니터 시작.
@@ -21,12 +21,13 @@ const CA_TYPE_IDS = [2082, 2589, 33393, 33394];
  * @param {{ redis: object, prisma: object, tenantKey: string, signal?: AbortSignal }} opts
  */
 export function startPajamaMonitor({ redis, prisma, tenantKey, signal }) {
+    const caTypeIds = CA_TYPE_IDS;
+
     log.info(
-        `[pajama] 잠옷 알림 시스템 시작 tenant=${tenantKey} caTypeIds=[${CA_TYPE_IDS.join(",")}]`
+        `[pajama] 잠옷 알림 시스템 시작 tenant=${tenantKey} caTypeIds=[${caTypeIds.join(",")}]`
     );
 
-    startHotUserScheduler({ prisma, redis, tenantKey, signal });
-    startTargetPoller({ prisma, redis, tenantKey, caTypeIds: CA_TYPE_IDS, signal });
-    startOnlinePoller({ prisma, redis, tenantKey, caTypeIds: CA_TYPE_IDS, signal });
+    startTargetPoller({ prisma, redis, tenantKey, caTypeIds, signal });
+    startOnlinePoller({ prisma, redis, tenantKey, caTypeIds, signal });
     startDockingPoller({ prisma, redis, tenantKey, signal });
 }

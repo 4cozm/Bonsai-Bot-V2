@@ -7,6 +7,7 @@ import fleetCommander from "./fleetCommander.js";
 import fuel from "./fuel.js";
 import fuelDailyCheck from "./fuelDailyCheck.js";
 import marketPrice from "./marketPrice.js";
+import pajamaHotCheck from "./pajamaHotCheck.js";
 import ping from "./ping.js";
 
 export function getCommandDefinitions() {
@@ -20,6 +21,7 @@ export function getCommandDefinitions() {
         fuelDailyCheck,
         marketPrice,
         fleetCommander,
+        pajamaHotCheck,
     ];
 }
 
