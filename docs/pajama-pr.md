@@ -103,8 +103,6 @@ const CA_TYPE_IDS = Object.freeze([2082, 2589, 33393, 33394]);
 | `packages/worker/src/pajama/dockingPoller.js` | 도킹 감지 (20초 간격) |
 | `packages/orchestrator/src/schedulers/pajamaHotScheduler.js` | 오케스트레이터 hot 분류 스케줄러 |
 | `docs/pajama-pr.md` | 이 문서 |
-| `docs/pajama-test-commands.md` | 테스트 명령어 모음 |
-| `docs/pajama-prod-revert.md` | 테스트↔프로덕션 전환 가이드 |
 
 ### 수정
 | 파일 | 변경 내용 |
