@@ -35,6 +35,9 @@ describe("shared/config/keys keySetsFor", () => {
         const out = keySetsFor({ role: "worker", isDev: true });
         expect(out.sharedKeys).toContain("REDIS_URL");
         expect(out.sharedKeys).toContain("TENANT_DB_URL_TEMPLATE");
+        // dev에서는 TENANT_ALERT_WEBHOOK_URL 미요구(연료 웹후크 dev 미사용)
+        expect(out.tenantKeys).toEqual(["EVE_ANCHOR_CHARIDS"]);
+        expect(out.tenantKeys).not.toContain("TENANT_ALERT_WEBHOOK_URL");
     });
 
     test("global + isDev false → global prod 키 포함", () => {
