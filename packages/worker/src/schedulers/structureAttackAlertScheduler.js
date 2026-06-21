@@ -11,6 +11,7 @@ import {
 import { structureTypeMapping } from "../esi/structureTypeMapping.js";
 import { getCorporationStructureMap } from "../esi/getCorporationStructureMap.js";
 import { getSolarSystemName } from "../esi/getSolarSystemName.js";
+import { getTypeName } from "../esi/getTypeName.js";
 
 const ESI_NOTIFICATIONS_BASE = "https://esi.evetech.net/latest/characters";
 const REDIS_KEY_PREFIX = "bonsai:structure_alert:max_notification_id";
@@ -52,13 +53,16 @@ async function fetchCharacterNotifications(characterId, accessToken) {
 }
 
 /**
- * notification.text에서 키 하나 파싱 (key: value 형식, 한 줄)
+ * notification.text(YAML)에서 키 하나 파싱 (key: value 형식, 한 줄)
+ * - 줄 시작에 고정(^\s*key:)해 다른 키의 부분일치를 막는다(예: "typeID"가 "structureTypeID:"에 오매칭).
+ * - i 플래그로 대소문자 차이를 흡수: TowerAlertMsg는 "solarSystemID"(대문자 S), 그 외 타입은
+ *   "solarsystemID"(소문자)로 와서, 같은 코드로 양쪽을 처리하려면 필요.
  * @param {string} text
- * @param {string} key - 예: "structureTypeID", "typeID"
+ * @param {string} key - 예: "structureTypeID", "typeID", "solarsystemID"
  * @returns {string | null}
  */
-function parseTextKey(text, key) {
-    const re = new RegExp(`${key}:\\s*(.+)`);
+export function parseTextKey(text, key) {
+    const re = new RegExp(`^\\s*${key}\\s*:\\s*(.+?)\\s*$`, "im");
     const m = String(text ?? "").match(re);
     const raw = m ? m[1].trim() : null;
     if (raw == null || raw === "") return null;
@@ -72,7 +76,7 @@ function parseTextKey(text, key) {
  * @param {string | null} raw
  * @returns {string | null}
  */
-function extractNumericId(raw) {
+export function extractNumericId(raw) {
     const m = String(raw ?? "").match(/(\d+)\s*$/);
     return m ? m[1] : null;
 }
@@ -136,6 +140,23 @@ function parsePercentage(text, key) {
 }
 
 /**
+ * typeID/structureTypeID → 타입 이름 해석.
+ * 1) 큐레이션된 structureTypeMapping(한글명+이모지) 우선.
+ * 2) 없으면 ESI 공개 엔드포인트로 폴백(Redis 캐싱) — POS 컨트롤 타워 등 매핑 미등록 타입 대응.
+ * @param {import("redis").RedisClientType | null | undefined} redis
+ * @param {string | null} typeIdRaw
+ * @returns {Promise<string | null>}
+ */
+export async function resolveTypeName(redis, typeIdRaw) {
+    if (typeIdRaw == null) return null;
+    const id = Number(typeIdRaw);
+    if (!Number.isInteger(id) || id <= 0) return null;
+    const mapped = structureTypeMapping[id];
+    if (mapped?.name) return mapped.name;
+    return getTypeName(redis, id);
+}
+
+/**
  * 건물 필드 값 구성. 이름이 있으면 강조, 없으면 "(이름 미확인)" + 유형.
  * @param {string | null} structureName
  * @param {string | null} structureTypeName
@@ -196,10 +217,7 @@ async function sendAlertEmbed(params, type, text = "", tenantKey = "") {
             // 성계 위치는 solarsystemID로 조회 가능.
             const { systemName } = await resolveStructureLocation(ctx, text);
             const typeIdRaw = parseTextKey(text, "typeID");
-            const structureTypeName =
-                typeIdRaw && structureTypeMapping[Number(typeIdRaw)]
-                    ? structureTypeMapping[Number(typeIdRaw)].name
-                    : null;
+            const structureTypeName = await resolveTypeName(params.redis, typeIdRaw);
             embed = {
                 title: "포스 공격 알림",
                 description: "포스가 공격받고 있습니다.",
@@ -234,10 +252,7 @@ async function sendAlertEmbed(params, type, text = "", tenantKey = "") {
             const armor = parsePercentage(text, "armorPercentage");
             const hull = parsePercentage(text, "hullPercentage");
             const structureTypeIdRaw = parseTextKey(text, "structureTypeID");
-            const structureTypeName =
-                structureTypeIdRaw && structureTypeMapping[Number(structureTypeIdRaw)]
-                    ? structureTypeMapping[Number(structureTypeIdRaw)].name
-                    : null;
+            const structureTypeName = await resolveTypeName(params.redis, structureTypeIdRaw);
             embed = {
                 title: "건물 공격 알림",
                 description: "건물이 공격받고 있습니다.",
@@ -279,10 +294,7 @@ async function sendAlertEmbed(params, type, text = "", tenantKey = "") {
             const isShields = type === "StructureLostShields";
             const { structureName, systemName } = await resolveStructureLocation(ctx, text);
             const structureTypeIdRaw = parseTextKey(text, "structureTypeID");
-            const structureTypeName =
-                structureTypeIdRaw && structureTypeMapping[Number(structureTypeIdRaw)]
-                    ? structureTypeMapping[Number(structureTypeIdRaw)].name
-                    : null;
+            const structureTypeName = await resolveTypeName(params.redis, structureTypeIdRaw);
             embed = {
                 title: isShields ? "건물 실드 파괴" : "건물 아머 파괴",
                 description: isShields
