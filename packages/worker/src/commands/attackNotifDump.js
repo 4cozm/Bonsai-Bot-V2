@@ -105,7 +105,7 @@ export default {
         name: "attackdump",
         description: "[임시/진단] 최근 건물 공격 알림의 ESI 원본을 덤프",
         type: 1,
-        default_member_permissions: "8", // Administrator 전용
+        // 임시 테스트용이라 권한 제한 없음(출력은 ephemeral, 민감 정보 아님). 테스트 후 블록째 제거.
         options: [
             {
                 type: 3, // STRING
