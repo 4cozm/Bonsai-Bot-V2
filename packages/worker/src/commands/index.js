@@ -1,5 +1,4 @@
 // packages/worker/src/commands/index.js
-import attackNotifDump from "./attackNotifDump.js";
 import dev from "./dev.js";
 import esiComplete from "./esiComplete.js";
 import esiList from "./esiList.js";
@@ -21,7 +20,6 @@ export function getCommandDefinitions() {
         fuelDailyCheck,
         marketPrice,
         fleetCommander,
-        attackNotifDump, // dev 전용 진단(슬래시 미등록): /dev cmd:attackDump
     ];
 }
 
