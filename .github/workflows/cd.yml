@@ -39,7 +39,10 @@ jobs:
                       echo "[CD] git fetch..."
                       git fetch origin
                       git checkout "$DEPLOY_BRANCH"
-                      git pull origin "$DEPLOY_BRANCH"
+                      # 서버 작업트리의 로컬 변경(예: 과거 npm install로 더럽혀진 package-lock.json)이
+                      # git pull을 가로막아 깨진 lock이 남고 npm ci가 거부되던 문제 → origin과 정확히 일치시킨다.
+                      # (.env 등 untracked 파일은 reset --hard가 건드리지 않음)
+                      git reset --hard "origin/$DEPLOY_BRANCH"
                       echo "[CD] npm ci..."
                       npm ci
                       if [ -n "${{ secrets.DATABASE_URL }}" ]; then
