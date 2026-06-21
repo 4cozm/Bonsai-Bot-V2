@@ -16,6 +16,11 @@ const ESI_NOTIFICATIONS_BASE = "https://esi.evetech.net/latest/characters";
 const REDIS_KEY_PREFIX = "bonsai:structure_alert:max_notification_id";
 const CRON_SCHEDULE = "*/10 * * * *"; // 10분마다 (ESI 10분 캐싱)
 
+// 긴 다운타임 후 재시작 시, ESI에 남아있는 과거 알림(id > maxId)이 한꺼번에 전송되는 것을 막는다.
+// 이 시간보다 오래된 알림은 전송을 스킵하되 멱등 baseline은 전진시킨다.
+// cron 10분 + ESI 10분 캐싱 여유를 고려해 60분. (너무 짧으면 정상 경로에서 늦게 도착한 알림을 떨굴 수 있음)
+const MAX_NOTIFICATION_AGE_MS = 60 * 60 * 1000;
+
 const IGNORE_CORP_NAMES = [
     "Blood Raiders",
     "Guristas Pirates",
@@ -39,7 +44,7 @@ function redisKey(tenantKey, characterId) {
  * ESI에서 캐릭터 notifications 조회
  * @param {string} characterId - EVE character ID
  * @param {string} accessToken - Bearer token
- * @returns {Promise<{ notification_id: number, type: string, text?: string }[] | null>}
+ * @returns {Promise<{ notification_id: number, type: string, text?: string, timestamp?: string }[] | null>}
  */
 async function fetchCharacterNotifications(characterId, accessToken) {
     const url = `${ESI_NOTIFICATIONS_BASE}/${characterId}/notifications/`;
@@ -373,17 +378,34 @@ async function processCharacterNotifications({
 
     const webhookUrl = String(process.env.DISCORD_ALERT_WEBHOOK_URL ?? "").trim();
     let processedMax = maxId;
+    const cutoff = Date.now() - MAX_NOTIFICATION_AGE_MS;
 
     for (const notification of data) {
         if (notification.notification_id <= maxId) break;
 
-        const notificationType = notification.type || "";
-        await sendAlertEmbed(
-            { url: webhookUrl, log, redis, prisma, corporationId, characterId },
-            notificationType,
-            notification.text ?? "",
-            tenantKey
-        );
+        // 오래된 알림(긴 다운타임 후 재시작 등)은 전송하지 않되, baseline은 전진시켜
+        // 다음 실행에서 다시 평가하지 않도록 한다.
+        // ESI timestamp는 RFC 3339(UTC) → Date.parse(UTC ms)와 Date.now()를 직접 비교.
+        // 파싱 실패 시에는 critical 알림을 놓치지 않도록 전송한다(fail-open).
+        const ts = Date.parse(notification.timestamp);
+        const tooOld = Number.isFinite(ts) && ts < cutoff;
+
+        if (tooOld) {
+            log.info("[structure-attack-alert] 오래된 알림 스킵 (baseline만 전진)", {
+                tenantKey,
+                characterId: String(characterId),
+                notificationId: notification.notification_id,
+                timestamp: notification.timestamp,
+            });
+        } else {
+            const notificationType = notification.type || "";
+            await sendAlertEmbed(
+                { url: webhookUrl, log, redis, prisma, corporationId, characterId },
+                notificationType,
+                notification.text ?? "",
+                tenantKey
+            );
+        }
         processedMax = Math.max(processedMax, notification.notification_id);
     }
 
