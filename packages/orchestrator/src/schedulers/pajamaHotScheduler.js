@@ -51,7 +51,12 @@ function getTenantKeys() {
         .split(",")
         .map((chunk) => {
             const idx = chunk.trim().indexOf(":");
-            return idx > 0 ? chunk.trim().slice(idx + 1).trim() : null;
+            return idx > 0
+                ? chunk
+                      .trim()
+                      .slice(idx + 1)
+                      .trim()
+                : null;
         })
         .filter(Boolean);
 }
