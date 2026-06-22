@@ -87,12 +87,15 @@ export const ENV_REQUIRED = Object.freeze({
 /**
  * 테넌트 워커 전용. Vault에 {TENANT}-{KEY}(예: CAT-EVE-ANCHOR-CHARIDS)로 저장.
  * 오케스트레이터 및 TENANT=global 워커는 사용하지 않음(worker 초기화에서 tenantKeys를 빈 배열로 덮어씀).
+ * - common: dev/prod 공통 필수.
+ * - prod: 운영 전용 필수. TENANT_ALERT_WEBHOOK_URL은 연료 일일체크 웹후크용으로 dev에선 미사용
+ *   (dev 스케줄러 미동작, fuelDailyCheck도 빈 URL을 graceful 스킵)이라 dev vault 미등록을 허용.
  */
-export const WORKER_TENANT_REQUIRED = Object.freeze([
-    "EVE_ANCHOR_CHARIDS",
-    // TODO: dev Key Vault에 미등록 — .env 더미값으로 대체 중. 프로덕션 배포 전 복구 필요.
-    // "TENANT_ALERT_WEBHOOK_URL",
-]);
+export const WORKER_TENANT_REQUIRED = Object.freeze({
+    common: Object.freeze(["EVE_ANCHOR_CHARIDS"]),
+    dev: Object.freeze([]),
+    prod: Object.freeze(["TENANT_ALERT_WEBHOOK_URL"]),
+});
 
 //--------------------------------------------------------
 
@@ -127,7 +130,10 @@ export function keySetsFor(ctx) {
     if (role === "worker") {
         return {
             sharedKeys: [...globalKeys, ...roleKeys],
-            tenantKeys: [...WORKER_TENANT_REQUIRED],
+            tenantKeys: [
+                ...(WORKER_TENANT_REQUIRED.common ?? []),
+                ...(WORKER_TENANT_REQUIRED[env] ?? []),
+            ],
         };
     }
 

@@ -39,7 +39,15 @@ jobs:
                       echo "[CD] git fetch..."
                       git fetch origin
                       git checkout "$DEPLOY_BRANCH"
-                      git pull origin "$DEPLOY_BRANCH"
+                      # 서버 작업트리의 로컬 변경(예: 과거 npm install로 더럽혀진 package-lock.json)이
+                      # git pull을 가로막아 깨진 lock이 남고 npm ci가 거부되던 문제 → origin과 정확히 일치시킨다.
+                      # (.env 등 untracked 파일은 reset --hard가 건드리지 않음)
+                      git reset --hard "origin/$DEPLOY_BRANCH"
+                      # npm ci는 node_modules를 통째로 재설치하며 메모리를 크게 튄다. 작은 인스턴스에서
+                      # 실행 중인 pm2 프로세스(node 5개)와 겹치면 OOM으로 박스가 죽을 수 있어, 설치 전에
+                      # pm2 프로세스를 내려 메모리를 확보한다(설치 동안 짧은 다운타임 발생, 설치 후 재기동).
+                      echo "[CD] pm2 stop (메모리 확보)..."
+                      npx pm2 stop all || true
                       echo "[CD] npm ci..."
                       npm ci
                       if [ -n "${{ secrets.DATABASE_URL }}" ]; then
@@ -49,8 +57,10 @@ jobs:
                       npx prisma generate
                       echo "[CD] prisma migrate deploy..."
                       npx prisma migrate deploy
-                      echo "[CD] pm2 restart..."
-                      npx pm2 restart ./infra/pm2/ecosystem.config.cjs --env production
+                      echo "[CD] pm2 start/restart..."
+                      # stop으로 내려둔(또는 OOM/재부팅으로 데몬이 비어있을 수 있는) 프로세스를
+                      # 확실히 올리기 위해 startOrRestart 사용(없으면 start, 있으면 restart).
+                      npx pm2 startOrRestart ./infra/pm2/ecosystem.config.cjs --env production
                       echo "[CD] pm2 save..."
                       npx pm2 save || true
                       echo "[CD] done."
