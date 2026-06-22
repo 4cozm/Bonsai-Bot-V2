@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { runAutocompleteConsumer } from "../bus/autocompleteConsumer.js";
 import { runRedisStreamsCommandConsumer } from "../bus/redisStreamsCommandConsumer.js";
 import { ensureTenantDbAndMigrate, getPrisma } from "../db/prisma.js";
+import { startPajamaMonitor } from "../pajama/index.js";
 import { startStructureAttackAlertScheduler } from "../schedulers/structureAttackAlertScheduler.js";
 
 const DB_CONNECT_RETRY_ATTEMPTS = 10;
@@ -150,6 +151,10 @@ export async function initializeWorker(opts = {}) {
             signal: ac.signal,
             log,
         });
+    }
+
+    if (tenantKey !== "global") {
+        startPajamaMonitor({ redis, prisma, tenantKey, signal: ac.signal });
     }
 
     await runRedisStreamsCommandConsumer({

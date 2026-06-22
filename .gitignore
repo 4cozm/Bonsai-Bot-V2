@@ -1,3 +1,10 @@
+# Claude Code
+.claude/
+
+# 로컬 개발 가이드 (레포 추적 제외)
+docs/pajama-test-commands.md
+docs/pajama-prod-revert.md
+
 # Logs
 logs
 *.log
