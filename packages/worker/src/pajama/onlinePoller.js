@@ -25,9 +25,9 @@ import {
 import { makePajamaState } from "./state.js";
 
 const log = logger();
-const OFFLINE_CHECK_INTERVAL_MS = 5 * 1000;   // 5초: 오프라인 유저 접속 감지
+const OFFLINE_CHECK_INTERVAL_MS = 5 * 1000; // 5초: 오프라인 유저 접속 감지
 const ONLINE_REFRESH_INTERVAL_MS = 60 * 1000; // 60초: 온라인 유저 재확인
-const UNDOCK_CHECK_INTERVAL_MS = 5 * 1000;    // 5초: 언독 감지
+const UNDOCK_CHECK_INTERVAL_MS = 5 * 1000; // 5초: 언독 감지
 
 function makeScheduler(label, intervalMs, fn, signal) {
     let timer = null;
@@ -44,7 +44,13 @@ function makeScheduler(label, intervalMs, fn, signal) {
         }, intervalMs);
     };
     schedule();
-    signal?.addEventListener("abort", () => { if (timer) clearTimeout(timer); }, { once: true });
+    signal?.addEventListener(
+        "abort",
+        () => {
+            if (timer) clearTimeout(timer);
+        },
+        { once: true }
+    );
 }
 
 // ── 오프라인→온라인 감지 (5초) ───────────────────────────────────────────────
@@ -62,7 +68,7 @@ async function runOfflineCheck({ prisma, redis, tenantKey }) {
     const offlineTargets = targetIds.filter((id) => !onlineSet.has(id));
     if (offlineTargets.length === 0) return;
 
-    log.info("[pajama:online] 오프라인 체크 진입", { targetIds, onlineIds, offlineTargets });
+    log.debug("[pajama:online] 오프라인 체크 진입", { targetIds, onlineIds, offlineTargets });
 
     const structureSet = new Set(structureIds.map(String));
     const dockingSnapshot = new Set(await state.getList("docking"));
@@ -112,9 +118,14 @@ async function runOfflineCheck({ prisma, redis, tenantKey }) {
         log.info("[pajama:online] 온라인 전환 감지", { charIds: toAddToOnline });
 
         if (toAddToDocking.length > 0) {
-            const newDocking = [...new Set([...currentDocking, ...toAddToDocking.map((v) => String(v.charId))])];
+            const newDocking = [
+                ...new Set([...currentDocking, ...toAddToDocking.map((v) => String(v.charId))]),
+            ];
             await state.setList("docking", newDocking);
-            log.info("[pajama:online] 도킹 감지", { charIds: toAddToDocking.map((v) => v.charId), structureId: toAddToDocking[0]?.structureId });
+            log.info("[pajama:online] 도킹 감지", {
+                charIds: toAddToDocking.map((v) => v.charId),
+                structureId: toAddToDocking[0]?.structureId,
+            });
         }
     }
 }
@@ -128,7 +139,7 @@ async function runOnlineRefresh({ prisma, redis, tenantKey }) {
 
     if (onlineIds.length === 0) return;
 
-    log.info("[pajama:online] 온라인 재확인 시작", { onlineIds });
+    log.debug("[pajama:online] 온라인 재확인 시작", { onlineIds });
 
     const results = await Promise.allSettled(
         onlineIds.map(async (charId) => {
@@ -144,7 +155,10 @@ async function runOnlineRefresh({ prisma, redis, tenantKey }) {
                 return false;
             }
 
-            log.info("[pajama:online] 온라인 재확인 ESI 응답", { charId, online: onlineData.online });
+            log.debug("[pajama:online] 온라인 재확인 ESI 응답", {
+                charId,
+                online: onlineData.online,
+            });
             return onlineData.online === true;
         })
     );
@@ -168,11 +182,14 @@ async function runOnlineRefresh({ prisma, redis, tenantKey }) {
         }
     }
 
-    log.info("[pajama:online] 온라인 재확인 완료", { before: onlineIds, after: stillOnlineIds });
+    log.debug("[pajama:online] 온라인 재확인 완료", { before: onlineIds, after: stillOnlineIds });
     await state.setList("online", stillOnlineIds);
     if (toRemoveFromDocking.size > 0) {
         const currentDocking = await state.getList("docking");
-        await state.setList("docking", currentDocking.filter((id) => !toRemoveFromDocking.has(id)));
+        await state.setList(
+            "docking",
+            currentDocking.filter((id) => !toRemoveFromDocking.has(id))
+        );
     }
 }
 
@@ -212,7 +229,11 @@ async function runUndockCheck({ prisma, redis, tenantKey, caTypeIds }) {
             const activeImplants = await getCharacterImplants(token, charId);
             const caTypeId = findCAImplantTypeId(activeImplants ?? [], caTypeIds);
 
-            return { charId, removeFromDocking: true, alert: caTypeId ? { token, caTypeId } : null };
+            return {
+                charId,
+                removeFromDocking: true,
+                alert: caTypeId ? { token, caTypeId } : null,
+            };
         })
     );
 
@@ -236,7 +257,11 @@ async function runUndockCheck({ prisma, redis, tenantKey, caTypeIds }) {
                     "잠옷을 입고 언독하였습니다!!!",
                     "경고: CA 임플란트를 장착한 상태로 모니터링 스트럭쳐에서 언독하였습니다.<br><br>즉시 도킹하여 임플란트를 제거하거나 안전한 장소로 이동하십시오."
                 );
-                log.info("[pajama:online] 언독 알림 창 팝업", { charId, caTypeId: alert.caTypeId, sent });
+                log.info("[pajama:online] 언독 알림 창 팝업", {
+                    charId,
+                    caTypeId: alert.caTypeId,
+                    sent,
+                });
             }
             if (removeFromDocking) toRemoveFromDocking.add(charId);
         })
@@ -245,7 +270,10 @@ async function runUndockCheck({ prisma, redis, tenantKey, caTypeIds }) {
     // docking 리스트를 한 번의 setList로 원자적 반영
     if (toRemoveFromDocking.size > 0) {
         const currentDocking = await state.getList("docking");
-        await state.setList("docking", currentDocking.filter((id) => !toRemoveFromDocking.has(id)));
+        await state.setList(
+            "docking",
+            currentDocking.filter((id) => !toRemoveFromDocking.has(id))
+        );
         log.info("[pajama:online] docking 리스트에서 제거", { charIds: [...toRemoveFromDocking] });
     }
 }
@@ -256,17 +284,25 @@ async function runUndockCheck({ prisma, redis, tenantKey, caTypeIds }) {
  * @param {{ prisma: object, redis: object, tenantKey: string, caTypeIds: number[], signal?: AbortSignal }} opts
  */
 export function startOnlinePoller({ prisma, redis, tenantKey, caTypeIds, signal }) {
-    log.info("[pajama:online] 온라인 폴러 시작 — 오프라인감지 5초 / 온라인재확인 60초 / 언독감지 5초");
+    log.info(
+        "[pajama:online] 온라인 폴러 시작 — 오프라인감지 5초 / 온라인재확인 60초 / 언독감지 5초"
+    );
 
-    makeScheduler("오프라인 체크", OFFLINE_CHECK_INTERVAL_MS,
+    makeScheduler(
+        "오프라인 체크",
+        OFFLINE_CHECK_INTERVAL_MS,
         () => runOfflineCheck({ prisma, redis, tenantKey }),
         signal
     );
-    makeScheduler("온라인 재확인", ONLINE_REFRESH_INTERVAL_MS,
+    makeScheduler(
+        "온라인 재확인",
+        ONLINE_REFRESH_INTERVAL_MS,
         () => runOnlineRefresh({ prisma, redis, tenantKey }),
         signal
     );
-    makeScheduler("언독 감지", UNDOCK_CHECK_INTERVAL_MS,
+    makeScheduler(
+        "언독 감지",
+        UNDOCK_CHECK_INTERVAL_MS,
         () => runUndockCheck({ prisma, redis, tenantKey, caTypeIds }),
         signal
     );
