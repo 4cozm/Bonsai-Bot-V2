@@ -14,7 +14,7 @@
 //   docking 리스트의 각 캐릭터 위치를 확인.
 //   모니터링 스트럭쳐 밖이면 CA 임플란트 보유 여부 재확인 후 인게임 알림 창 팝업.
 //
-import { getAccessTokenForCharacter, logger } from "@bonsai/shared";
+import { logger } from "@bonsai/shared";
 import {
     findCAImplantTypeId,
     getCharacterImplants,
@@ -23,6 +23,7 @@ import {
     openWindowNewMail,
 } from "./esiCalls.js";
 import { makePajamaState } from "./state.js";
+import { getMonitorToken } from "./tokenHealth.js";
 
 const log = logger();
 const OFFLINE_CHECK_INTERVAL_MS = 5 * 1000; // 5초: 오프라인 유저 접속 감지
@@ -75,7 +76,7 @@ async function runOfflineCheck({ prisma, redis, tenantKey }) {
 
     const results = await Promise.allSettled(
         offlineTargets.map(async (charId) => {
-            const token = await getAccessTokenForCharacter(prisma, BigInt(charId));
+            const token = await getMonitorToken({ prisma, state, charId });
             if (!token) return null;
 
             const onlineData = await getCharacterOnline(token, charId);
@@ -138,39 +139,38 @@ async function runOnlineRefresh({ prisma, redis, tenantKey }) {
 
     const results = await Promise.allSettled(
         onlineIds.map(async (charId) => {
-            const token = await getAccessTokenForCharacter(prisma, BigInt(charId));
-            if (!token) {
-                log.error("[pajama:online] 토큰 취득 실패 — online 제거", { charId });
-                return false;
-            }
+            // 토큰 실패: 일시면 유지, 영구(연속 실패)면 getMonitorToken이 이미 전체 퇴출 → 유지로 둬도 무방
+            const token = await getMonitorToken({ prisma, state, charId });
+            if (!token) return { charId, offline: false };
 
             const onlineData = await getCharacterOnline(token, charId);
             if (onlineData === null) {
-                log.error("[pajama:online] ESI online 조회 실패 — online 제거", { charId });
-                return false;
+                // ESI 일시 장애 → 온라인 유지 (거짓 오프라인 방지)
+                log.debug("[pajama:online] ESI online 조회 실패(일시) — 유지", { charId });
+                return { charId, offline: false };
             }
 
             log.debug("[pajama:online] 온라인 재확인 ESI 응답", {
                 charId,
                 online: onlineData.online,
             });
-            return onlineData.online === true;
+            return { charId, offline: onlineData.online !== true };
         })
     );
 
-    // 오프라인 전환/조회 실패한 캐릭터만 online·docking에서 SREM (전체 덮어쓰기 금지 →
-    // 그 사이 들어온 다른 루프의 SADD가 살아남아 lost update 방지)
+    // 확정 오프라인인 캐릭터만 online·docking에서 SREM (전체 덮어쓰기 금지 →
+    // 그 사이 들어온 다른 루프의 SADD가 살아남아 lost update 방지).
+    // 일시 실패(토큰/ESI/예외)는 유지하여 플래핑을 막는다.
     const toRemove = new Set();
     for (const [i, r] of results.entries()) {
         if (r.status === "rejected") {
-            log.error("[pajama:online] 온라인 재확인 예외 — online 제거", {
+            log.debug("[pajama:online] 온라인 재확인 예외(일시) — 유지", {
                 charId: onlineIds[i],
                 message: r.reason?.message,
             });
-            toRemove.add(onlineIds[i]);
             continue;
         }
-        if (!r.value) {
+        if (r.value.offline) {
             log.info("[pajama:online] 오프라인 전환 감지", { charId: onlineIds[i] });
             toRemove.add(onlineIds[i]);
         }
@@ -203,9 +203,10 @@ async function runUndockCheck({ prisma, redis, tenantKey, caTypeIds }) {
 
     const results = await Promise.allSettled(
         dockingIds.map(async (charId) => {
-            const token = await getAccessTokenForCharacter(prisma, BigInt(charId));
+            const token = await getMonitorToken({ prisma, state, charId });
             if (!token) {
-                log.warn("[pajama:online] 언독 체크 토큰 취득 실패 — docking 유지", { charId });
+                // 일시 실패는 docking 유지, 영구면 getMonitorToken이 이미 퇴출
+                log.debug("[pajama:online] 언독 체크 토큰 취득 실패 — docking 유지", { charId });
                 return { charId, removeFromDocking: false, alert: null };
             }
 

@@ -33,6 +33,8 @@ function normalizeIds(ids) {
 export function makePajamaState(redis, tenantKey) {
     const prefix = `bonsai:${tenantKey}:pajama`;
     const key = (type) => `${prefix}:${type}`;
+    // 캐릭터별 연속 토큰 실패 횟수 (Hash: charId → count)
+    const failKey = `${prefix}:tokenfail`;
 
     /**
      * 집합 전체 조회. 없거나 실패하면 빈 배열.
@@ -115,5 +117,59 @@ export function makePajamaState(redis, tenantKey) {
         }
     };
 
-    return { getMembers, addMembers, removeMembers, replaceMembers };
+    /**
+     * 캐릭터의 연속 토큰 실패 카운터를 1 증가시키고 누적값 반환 (원자적 HINCRBY).
+     * @param {string|number|bigint} charId
+     * @returns {Promise<number>}
+     */
+    const bumpTokenFail = async (charId) => {
+        try {
+            return await redis.hIncrBy(failKey, String(charId), 1);
+        } catch (err) {
+            log.warn("[pajama:state] bumpTokenFail 실패", { message: err?.message });
+            return 0;
+        }
+    };
+
+    /**
+     * 캐릭터의 토큰 실패 카운터 제거 (성공 시 호출).
+     * @param {string|number|bigint} charId
+     */
+    const clearTokenFail = async (charId) => {
+        try {
+            await redis.hDel(failKey, String(charId));
+        } catch (err) {
+            log.warn("[pajama:state] clearTokenFail 실패", { message: err?.message });
+        }
+    };
+
+    /**
+     * 캐릭터를 모든 모니터링 상태(hot/target/online/docking)에서 퇴출하고
+     * 실패 카운터도 제거 (영구 토큰 장애 시). 원자적 MULTI 실행.
+     * @param {(string|number|bigint) | (string|number|bigint)[]} ids
+     */
+    const purgeCharacter = async (ids) => {
+        const members = normalizeIds(Array.isArray(ids) ? ids : [ids]);
+        if (members.length === 0) return;
+        try {
+            const m = redis.multi();
+            for (const type of ["hot", "target", "online", "docking"]) {
+                m.sRem(key(type), members);
+            }
+            m.hDel(failKey, members);
+            await m.exec();
+        } catch (err) {
+            log.warn("[pajama:state] purgeCharacter 실패", { message: err?.message });
+        }
+    };
+
+    return {
+        getMembers,
+        addMembers,
+        removeMembers,
+        replaceMembers,
+        bumpTokenFail,
+        clearTokenFail,
+        purgeCharacter,
+    };
 }

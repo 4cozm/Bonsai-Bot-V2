@@ -114,6 +114,24 @@ const CA_TYPE_IDS = Object.freeze([2082, 2589, 33393, 33394]);
 
 ---
 
+## 토큰 장애 처리 (영구 장애 캐릭터 퇴출)
+
+`packages/worker/src/pajama/tokenHealth.js`의 `getMonitorToken`이 모든 폴러의 토큰
+취득을 감싼다. 토큰 취득이 **연속 N회 실패**하면 영구 장애(폐기된 refresh_token,
+미등록 등)로 간주하고 해당 캐릭터를 `hot`/`target`/`online`/`docking`에서 퇴출한다.
+성공 시 카운터가 리셋되므로 일시적 실패(SSO 5xx 등)는 임계치 도달 전에 회복된다.
+
+ESI 조회 실패(`/online/` 등)는 토큰 정상 = 감시 가능이므로 **유지**한다(거짓 오프라인 방지).
+
+| 환경 변수                        | 기본값   | 설명                                                                                   |
+| -------------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `PAJAMA_TOKEN_FAIL_THRESHOLD`    | `3`      | 연속 토큰 실패가 이 횟수 이상이면 영구 장애로 간주하고 퇴출.                           |
+| `PAJAMA_TOKEN_SUCCESS_WINDOW_MS` | `120000` | 최근 이 시간 내 토큰 성공 이력이 있을 때만 퇴출 허용(전역 SSO 장애 시 대량 퇴출 방지). |
+
+신규 Redis 키 `bonsai:{tenantKey}:pajama:tokenfail` (Hash: charId → 연속 실패 횟수).
+
+---
+
 ## 배포 체크리스트
 
 - [ ] Key Vault에 `{TENANT}-EVE-ANCHOR-CHARIDS` 등록

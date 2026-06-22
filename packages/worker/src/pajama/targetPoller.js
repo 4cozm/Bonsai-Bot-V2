@@ -3,7 +3,7 @@
 // 10분마다 hot 리스트를 순회하여, 점프 클론 또는 활성 임플란트 중에
 // CA 임플란트가 포함된 캐릭터만 target 리스트에 등록.
 //
-import { getAccessTokenForCharacter, logger } from "@bonsai/shared";
+import { logger } from "@bonsai/shared";
 import {
     findCAImplantTypeId,
     getAllImplantsFromClones,
@@ -11,6 +11,7 @@ import {
     getCharacterImplants,
 } from "./esiCalls.js";
 import { makePajamaState } from "./state.js";
+import { getMonitorToken } from "./tokenHealth.js";
 
 const log = logger();
 const POLL_INTERVAL_MS = Number(process.env.PAJAMA_TARGET_POLL_MS ?? 10 * 60 * 1000); // 기본 10분
@@ -33,7 +34,7 @@ async function runTargetPoll({ prisma, redis, tenantKey, caTypeIds }) {
 
     const results = await Promise.allSettled(
         hotIds.map(async (charId) => {
-            const token = await getAccessTokenForCharacter(prisma, BigInt(charId));
+            const token = await getMonitorToken({ prisma, state, charId });
             if (!token) return null;
 
             const clonesData = await getCharacterClones(token, charId);

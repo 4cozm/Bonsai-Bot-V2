@@ -4,9 +4,10 @@
 // 온라인 리스트에서 도킹 리스트를 뺀 차집합(온라인이지만 아직 도킹 미확인 유저)의
 // 현재 위치를 조회하여, 모니터링 스트럭쳐에 도킹 중이면 도킹 리스트에 추가.
 //
-import { getAccessTokenForCharacter, logger } from "@bonsai/shared";
+import { logger } from "@bonsai/shared";
 import { getCharacterLocation } from "./esiCalls.js";
 import { makePajamaState } from "./state.js";
+import { getMonitorToken } from "./tokenHealth.js";
 
 const log = logger();
 const POLL_INTERVAL_MS = 20 * 1000; // 20초
@@ -36,7 +37,7 @@ async function runDockingPoll({ prisma, redis, tenantKey }) {
 
     const results = await Promise.allSettled(
         unconfirmed.map(async (charId) => {
-            const token = await getAccessTokenForCharacter(prisma, BigInt(charId));
+            const token = await getMonitorToken({ prisma, state, charId });
             if (!token) return null;
 
             const location = await getCharacterLocation(token, charId);
