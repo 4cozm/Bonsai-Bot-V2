@@ -39,7 +39,7 @@ export async function runHotUserClassification({ prisma, redis, tenantKey }) {
 
     if (allChars.length === 0) {
         log.info("[pajama:hot] 등록된 캐릭터 없음 — hot 리스트 비움");
-        await state.setList("hot", []);
+        await state.replaceMembers("hot", []);
         return;
     }
 
@@ -74,7 +74,7 @@ export async function runHotUserClassification({ prisma, redis, tenantKey }) {
         })
         .filter(Boolean);
 
-    await state.setList("hot", hotIds);
+    await state.replaceMembers("hot", hotIds);
     log.info(`[pajama:hot] hot 리스트 갱신 완료: ${hotIds.length}명`);
 
     // ── 3) 스트럭쳐 목록 갱신 ──────────────────────────────────────────
@@ -85,7 +85,7 @@ export async function runHotUserClassification({ prisma, redis, tenantKey }) {
         .filter(Boolean);
 
     if (testStructureIds.length > 0) {
-        await state.setList("structures", testStructureIds);
+        await state.replaceMembers("structures", testStructureIds);
         log.info(
             `[pajama:hot] 스트럭쳐 목록 갱신 완료 (테스트 고정값): ${testStructureIds.length}개 → [${testStructureIds.join(", ")}]`
         );
@@ -95,7 +95,7 @@ export async function runHotUserClassification({ prisma, redis, tenantKey }) {
     const anchorChars = parseAnchorCharIds(process.env.EVE_ANCHOR_CHARIDS ?? "");
     if (anchorChars.length === 0) {
         log.info("[pajama:hot] EVE_ANCHOR_CHARIDS 미설정 — 스트럭쳐 목록 비움");
-        await state.setList("structures", []);
+        await state.replaceMembers("structures", []);
         return;
     }
 
@@ -121,7 +121,6 @@ export async function runHotUserClassification({ prisma, redis, tenantKey }) {
         }
     }
 
-    await state.setList("structures", structureIds);
+    await state.replaceMembers("structures", structureIds);
     log.info(`[pajama:hot] 스트럭쳐 목록 갱신 완료: ${structureIds.length}개`);
 }
-

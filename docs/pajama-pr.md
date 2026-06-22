@@ -36,8 +36,8 @@ EVE Online 캐릭터가 **CA(Warp Core Stabilizer) 임플란트를 장착한 상
 
 ### 테넌트 시크릿 (`{TENANT}-KEY` 형식, 예: `CAT-EVE-ANCHOR-CHARIDS`)
 
-| Key Vault 이름 | 형식 | 설명 |
-|---|---|---|
+| Key Vault 이름                | 형식                          | 설명                                                                                                                                            |
+| ----------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `{TENANT}-EVE-ANCHOR-CHARIDS` | `corpId:charId,corpId:charId` | 콥 스트럭쳐 조회용 앵커콥 캐릭터 목록. 해당 캐릭터는 ESI OAuth 등록 필요. 미설정 시 스트럭쳐 목록 비워져 도킹/언독 감지 불가 (hot 분류만 동작). |
 
 > `DISCORD_TENANT_MAP`은 기존 값 사용.
@@ -49,27 +49,28 @@ EVE Online 캐릭터가 **CA(Warp Core Stabilizer) 임플란트를 장착한 상
 봇에 ESI 등록하는 캐릭터(콥원 + 앵커콥 캐릭터)는 아래 스코프가 모두 포함된 토큰 필요.
 **기존 등록 캐릭터는 재등록 필요.**
 
-| 스코프 | 용도 |
-|---|---|
-| `esi-location.read_online.v1` | 온라인 상태 조회 |
+| 스코프                          | 용도                     |
+| ------------------------------- | ------------------------ |
+| `esi-location.read_online.v1`   | 온라인 상태 조회         |
 | `esi-location.read_location.v1` | 현재 위치(스트럭쳐) 조회 |
-| `esi-clones.read_clones.v1` | 점프클론 임플란트 조회 |
-| `esi-clones.read_implants.v1` | 활성 임플란트 조회 |
-| `esi-ui.open_window.v1` | 인게임 팝업 알림 전송 |
+| `esi-clones.read_clones.v1`     | 점프클론 임플란트 조회   |
+| `esi-clones.read_implants.v1`   | 활성 임플란트 조회       |
+| `esi-ui.open_window.v1`         | 인게임 팝업 알림 전송    |
 
 ---
 
 ## Redis 상태 키
 
-신규로 사용되는 Redis 키 (`bonsai:{tenantKey}:pajama:{type}`).
+신규로 사용되는 Redis 키 (`bonsai:{tenantKey}:pajama:{type}`). 자료형은 Redis Set —
+여러 폴러가 동시에 SADD/SREM으로 멤버십을 갱신해 read-modify-write 경쟁을 방지한다.
 
-| 키 | 내용 |
-|---|---|
-| `hot` | 최근 30일 내 접속한 ESI 등록 캐릭터 ID 목록 |
-| `target` | CA 임플란트 보유 캐릭터 ID 목록 |
-| `online` | 현재 온라인 중인 타겟 캐릭터 ID 목록 |
-| `docking` | 현재 모니터링 스트럭쳐에 도킹 중인 캐릭터 ID 목록 |
-| `structures` | 모니터링 대상 스트럭쳐 ID 목록 |
+| 키           | 내용                                              |
+| ------------ | ------------------------------------------------- |
+| `hot`        | 최근 30일 내 접속한 ESI 등록 캐릭터 ID 목록       |
+| `target`     | CA 임플란트 보유 캐릭터 ID 목록                   |
+| `online`     | 현재 온라인 중인 타겟 캐릭터 ID 목록              |
+| `docking`    | 현재 모니터링 스트럭쳐에 도킹 중인 캐릭터 ID 목록 |
+| `structures` | 모니터링 대상 스트럭쳐 ID 목록                    |
 
 ---
 
@@ -92,21 +93,23 @@ const CA_TYPE_IDS = Object.freeze([2082, 2589, 33393, 33394]);
 ## 변경된 파일
 
 ### 신규
-| 파일 | 설명 |
-|---|---|
-| `packages/worker/src/pajama/index.js` | 잠옷 모니터 진입점 |
-| `packages/worker/src/pajama/state.js` | Redis 상태 CRUD 헬퍼 (`getList`, `setList`) |
-| `packages/worker/src/pajama/esiCalls.js` | 잠옷 관련 ESI API 헬퍼 |
-| `packages/worker/src/pajama/hotUserScheduler.js` | hot 유저 분류 + 스트럭쳐 갱신 |
-| `packages/worker/src/pajama/targetPoller.js` | CA 임플 보유자 → target 리스트 (10분 간격) |
-| `packages/worker/src/pajama/onlinePoller.js` | 온라인/언독 감지 + 인게임 알림 (5초/60초) |
-| `packages/worker/src/pajama/dockingPoller.js` | 도킹 감지 (20초 간격) |
-| `packages/orchestrator/src/schedulers/pajamaHotScheduler.js` | 오케스트레이터 hot 분류 스케줄러 |
-| `docs/pajama-pr.md` | 이 문서 |
+
+| 파일                                                         | 설명                                                                             |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `packages/worker/src/pajama/index.js`                        | 잠옷 모니터 진입점                                                               |
+| `packages/worker/src/pajama/state.js`                        | Redis Set 상태 헬퍼 (`getMembers`/`addMembers`/`removeMembers`/`replaceMembers`) |
+| `packages/worker/src/pajama/esiCalls.js`                     | 잠옷 관련 ESI API 헬퍼                                                           |
+| `packages/worker/src/pajama/hotUserScheduler.js`             | hot 유저 분류 + 스트럭쳐 갱신                                                    |
+| `packages/worker/src/pajama/targetPoller.js`                 | CA 임플 보유자 → target 리스트 (10분 간격)                                       |
+| `packages/worker/src/pajama/onlinePoller.js`                 | 온라인/언독 감지 + 인게임 알림 (5초/60초)                                        |
+| `packages/worker/src/pajama/dockingPoller.js`                | 도킹 감지 (20초 간격)                                                            |
+| `packages/orchestrator/src/schedulers/pajamaHotScheduler.js` | 오케스트레이터 hot 분류 스케줄러                                                 |
+| `docs/pajama-pr.md`                                          | 이 문서                                                                          |
 
 ### 수정
-| 파일 | 변경 내용 |
-|---|---|
+
+| 파일                                            | 변경 내용                                           |
+| ----------------------------------------------- | --------------------------------------------------- |
 | `packages/orchestrator/src/initialize/index.js` | `startPajamaHotScheduler` 호출 추가 (isDev 조건 밖) |
 
 ---

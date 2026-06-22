@@ -22,10 +22,10 @@ const POLL_INTERVAL_MS = Number(process.env.PAJAMA_TARGET_POLL_MS ?? 10 * 60 * 1
  */
 async function runTargetPoll({ prisma, redis, tenantKey, caTypeIds }) {
     const state = makePajamaState(redis, tenantKey);
-    const hotIds = await state.getList("hot");
+    const hotIds = await state.getMembers("hot");
 
     if (hotIds.length === 0) {
-        await state.setList("target", []);
+        await state.replaceMembers("target", []);
         return;
     }
 
@@ -60,7 +60,7 @@ async function runTargetPoll({ prisma, redis, tenantKey, caTypeIds }) {
         })
         .filter(Boolean);
 
-    await state.setList("target", targetIds);
+    await state.replaceMembers("target", targetIds);
     log.info(`[pajama:target] target 리스트 갱신 완료: ${targetIds.length}명`);
 }
 

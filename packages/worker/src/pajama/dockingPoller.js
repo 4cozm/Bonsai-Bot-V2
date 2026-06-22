@@ -20,9 +20,9 @@ async function runDockingPoll({ prisma, redis, tenantKey }) {
     const state = makePajamaState(redis, tenantKey);
 
     const [onlineIds, dockingIds, structureIds] = await Promise.all([
-        state.getList("online"),
-        state.getList("docking"),
-        state.getList("structures"),
+        state.getMembers("online"),
+        state.getMembers("docking"),
+        state.getMembers("structures"),
     ]);
 
     if (onlineIds.length === 0 || structureIds.length === 0) return;
@@ -43,9 +43,7 @@ async function runDockingPoll({ prisma, redis, tenantKey }) {
             const structureId = location?.structure_id ? String(location.structure_id) : null;
             // log.info("[pajama:docking] 위치 조회 결과", { charId, structureId, station_id: location?.station_id ?? null });
 
-            return structureId && structureSet.has(structureId)
-                ? { charId, structureId }
-                : null;
+            return structureId && structureSet.has(structureId) ? { charId, structureId } : null;
         })
     );
 
@@ -64,10 +62,14 @@ async function runDockingPoll({ prisma, redis, tenantKey }) {
     }
 
     if (toAddToDocking.length > 0) {
-        const currentDocking = await state.getList("docking");
-        const newDocking = [...new Set([...currentDocking, ...toAddToDocking.map((v) => String(v.charId))])];
-        await state.setList("docking", newDocking);
-        log.info("[pajama:docking] 도킹 감지", { charIds: toAddToDocking.map((v) => v.charId), structureId: toAddToDocking[0]?.structureId });
+        await state.addMembers(
+            "docking",
+            toAddToDocking.map((v) => v.charId)
+        );
+        log.info("[pajama:docking] 도킹 감지", {
+            charIds: toAddToDocking.map((v) => v.charId),
+            structureId: toAddToDocking[0]?.structureId,
+        });
     }
 }
 

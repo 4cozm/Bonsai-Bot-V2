@@ -59,9 +59,9 @@ async function runOfflineCheck({ prisma, redis, tenantKey }) {
     const state = makePajamaState(redis, tenantKey);
 
     const [targetIds, onlineIds, structureIds] = await Promise.all([
-        state.getList("target"),
-        state.getList("online"),
-        state.getList("structures"),
+        state.getMembers("target"),
+        state.getMembers("online"),
+        state.getMembers("structures"),
     ]);
 
     const onlineSet = new Set(onlineIds);
@@ -71,7 +71,7 @@ async function runOfflineCheck({ prisma, redis, tenantKey }) {
     log.debug("[pajama:online] 오프라인 체크 진입", { targetIds, onlineIds, offlineTargets });
 
     const structureSet = new Set(structureIds.map(String));
-    const dockingSnapshot = new Set(await state.getList("docking"));
+    const dockingSnapshot = new Set(await state.getMembers("docking"));
 
     const results = await Promise.allSettled(
         offlineTargets.map(async (charId) => {
@@ -109,19 +109,14 @@ async function runOfflineCheck({ prisma, redis, tenantKey }) {
     }
 
     if (toAddToOnline.length > 0) {
-        const [currentOnline, currentDocking] = await Promise.all([
-            state.getList("online"),
-            toAddToDocking.length > 0 ? state.getList("docking") : Promise.resolve(null),
-        ]);
-        const newOnline = [...new Set([...currentOnline, ...toAddToOnline.map(String)])];
-        await state.setList("online", newOnline);
+        await state.addMembers("online", toAddToOnline);
         log.info("[pajama:online] 온라인 전환 감지", { charIds: toAddToOnline });
 
         if (toAddToDocking.length > 0) {
-            const newDocking = [
-                ...new Set([...currentDocking, ...toAddToDocking.map((v) => String(v.charId))]),
-            ];
-            await state.setList("docking", newDocking);
+            await state.addMembers(
+                "docking",
+                toAddToDocking.map((v) => v.charId)
+            );
             log.info("[pajama:online] 도킹 감지", {
                 charIds: toAddToDocking.map((v) => v.charId),
                 structureId: toAddToDocking[0]?.structureId,
@@ -135,7 +130,7 @@ async function runOfflineCheck({ prisma, redis, tenantKey }) {
 async function runOnlineRefresh({ prisma, redis, tenantKey }) {
     const state = makePajamaState(redis, tenantKey);
 
-    const onlineIds = await state.getList("online");
+    const onlineIds = await state.getMembers("online");
 
     if (onlineIds.length === 0) return;
 
@@ -163,33 +158,32 @@ async function runOnlineRefresh({ prisma, redis, tenantKey }) {
         })
     );
 
-    const stillOnlineIds = [];
-    const toRemoveFromDocking = new Set();
+    // 오프라인 전환/조회 실패한 캐릭터만 online·docking에서 SREM (전체 덮어쓰기 금지 →
+    // 그 사이 들어온 다른 루프의 SADD가 살아남아 lost update 방지)
+    const toRemove = new Set();
     for (const [i, r] of results.entries()) {
         if (r.status === "rejected") {
             log.error("[pajama:online] 온라인 재확인 예외 — online 제거", {
                 charId: onlineIds[i],
                 message: r.reason?.message,
             });
-            toRemoveFromDocking.add(onlineIds[i]);
+            toRemove.add(onlineIds[i]);
             continue;
         }
-        if (r.value) {
-            stillOnlineIds.push(onlineIds[i]);
-        } else {
+        if (!r.value) {
             log.info("[pajama:online] 오프라인 전환 감지", { charId: onlineIds[i] });
-            toRemoveFromDocking.add(onlineIds[i]);
+            toRemove.add(onlineIds[i]);
         }
     }
 
-    log.debug("[pajama:online] 온라인 재확인 완료", { before: onlineIds, after: stillOnlineIds });
-    await state.setList("online", stillOnlineIds);
-    if (toRemoveFromDocking.size > 0) {
-        const currentDocking = await state.getList("docking");
-        await state.setList(
-            "docking",
-            currentDocking.filter((id) => !toRemoveFromDocking.has(id))
-        );
+    log.debug("[pajama:online] 온라인 재확인 완료", {
+        before: onlineIds,
+        removed: [...toRemove],
+    });
+    if (toRemove.size > 0) {
+        const removeIds = [...toRemove];
+        await state.removeMembers("online", removeIds);
+        await state.removeMembers("docking", removeIds);
     }
 }
 
@@ -199,8 +193,8 @@ async function runUndockCheck({ prisma, redis, tenantKey, caTypeIds }) {
     const state = makePajamaState(redis, tenantKey);
 
     const [dockingIds, structureIds] = await Promise.all([
-        state.getList("docking"),
-        state.getList("structures"),
+        state.getMembers("docking"),
+        state.getMembers("structures"),
     ]);
 
     if (dockingIds.length === 0) return;
@@ -267,13 +261,9 @@ async function runUndockCheck({ prisma, redis, tenantKey, caTypeIds }) {
         })
     );
 
-    // docking 리스트를 한 번의 setList로 원자적 반영
+    // 언독/제거 대상만 원자적 SREM
     if (toRemoveFromDocking.size > 0) {
-        const currentDocking = await state.getList("docking");
-        await state.setList(
-            "docking",
-            currentDocking.filter((id) => !toRemoveFromDocking.has(id))
-        );
+        await state.removeMembers("docking", [...toRemoveFromDocking]);
         log.info("[pajama:online] docking 리스트에서 제거", { charIds: [...toRemoveFromDocking] });
     }
 }
