@@ -15,33 +15,33 @@ enum RegStatus {
 }
 
 model DiscordUser {
-  id         String   @id // discord snowflake (string)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id // discord snowflake (string)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // 캐릭터들
-  characters EveCharacter[]
+  characters    EveCharacter[]
   // 등록 시도들
   registrations EsiRegistration[]
 }
 
 model EveCharacter {
-  id            String   @id @default(cuid())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   discordUserId String
   discordUser   DiscordUser @relation(fields: [discordUserId], references: [id], onDelete: Cascade)
 
-  characterId   BigInt   @unique // EVE character_id (global unique)
+  characterId   BigInt @unique // EVE character_id (global unique)
   characterName String
 
   // 자동판정(초기값) + 나중에 수동 변경 가능
-  isMain        Boolean  @default(false)
+  isMain Boolean @default(false)
 
   // (선택) ESI 토큰 저장 위치: 보안/회전 고려해서 암호화된 문자열로 저장하는게 보통
-  accessToken   String?  @db.Text
-  refreshToken  String?  @db.Text
+  accessToken    String?   @db.Text
+  refreshToken   String?   @db.Text
   tokenExpiresAt DateTime?
 
   @@index([discordUserId])
@@ -49,38 +49,38 @@ model EveCharacter {
 }
 
 model EsiRegistration {
-  id            String    @id @default(cuid())
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   discordUserId String
   discordUser   DiscordUser @relation(fields: [discordUserId], references: [id], onDelete: Cascade)
 
   // state에서 복원되는 nonce (1회성 소비)
-  stateNonce    String   @unique
-  stateExpAt    DateTime
+  stateNonce String   @unique
+  stateExpAt DateTime
 
   // 디스코드 표시명(요청 시점)
-  discordNick   String
+  discordNick String
 
   // 콜백에서 verify로 얻는 값
   characterId   BigInt?
   characterName String?
 
   // main/alt “후보 판정”
-  mainCandidate Boolean  @default(false)
+  mainCandidate Boolean @default(false)
 
-  status        RegStatus @default(PENDING)
+  status RegStatus @default(PENDING)
 
   // 콜백에서 받은 토큰(esi-complete에서 EveCharacter로 옮긴 후 null 처리)
-  accessToken   String?   @db.Text
-  refreshToken  String?   @db.Text
+  accessToken    String?   @db.Text
+  refreshToken   String?   @db.Text
   tokenExpiresAt DateTime?
 
   // 디스코드 응답 편의(예: editReply 대상)
-  guildId       String?
-  channelId     String?
-  messageId     String?
+  guildId   String?
+  channelId String?
+  messageId String?
 
   @@index([discordUserId, status])
   @@index([createdAt])
@@ -92,4 +92,51 @@ model TenantMeta {
   tenantKey String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// 재고 추적 대상 구조물. 구조물을 소유한 콥과 콥행어(오피스)를 실제로 들고
+// 있는 콥이 다를 수 있어(2026-08 확인) corporationId를 따로 저장한다 —
+// 동기화 크론이 이 값으로 EVE_ANCHOR_CHARIDS에서 맞는 앵커 캐릭터를 찾는다.
+model TrackedStructure {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  structureId   BigInt  @unique // 구조물 item_id (예: SAVE CAT = 1051025995560)
+  corporationId Int // 콥행어(오피스)를 실제로 들고 있는 콥
+  displayName   String // 표시용 이름 (예: "SAVE CAT")
+  active        Boolean @default(true) // false면 동기화 스킵(파괴/철거 등)
+
+  targets StockTarget[]
+  logs    StockLog[]
+}
+
+// 품목별 목표 재고 수량. 프론트에서 명시적으로 목표를 설정한 품목만 생긴다.
+model StockTarget {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  structure   TrackedStructure @relation(fields: [structureId], references: [structureId])
+  structureId BigInt
+  typeId      Int // EVE type_id
+  targetQty   Int
+
+  @@unique([structureId, typeId])
+}
+
+// 재고 수량 스냅샷 로그. 목표 설정 여부와 무관하게 콥행어에서 발견된 품목
+// 전부(구조물 전체 재귀 합산 1건) 기록한다 — "현재 재고"는 최신 행 조회로
+// 구한다(별도 캐시 컬럼 없음). ESI 콥 자산 엔드포인트가 최대 1시간 캐시라
+// 동기화 크론도 그 이상 자주 돌 필요는 없다.
+model StockLog {
+  id        String   @id @default(cuid())
+  sampledAt DateTime @default(now())
+
+  structure   TrackedStructure @relation(fields: [structureId], references: [structureId])
+  structureId BigInt
+  typeId      Int
+  quantity    Int
+
+  @@index([structureId, typeId, sampledAt])
 }
