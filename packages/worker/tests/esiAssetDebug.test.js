@@ -111,6 +111,41 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(out.data.ephemeralReply).toBe(true);
     });
 
+    test("토큰 확보 실패: eveCharacter row 자체가 없으면 그 이유를 명시한다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue(null);
+        const ctx = {
+            prisma: { eveCharacter: { findUnique: jest.fn().mockResolvedValue(null) } },
+        };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(false);
+        expect(out.data.description).toContain("row 자체가 없음");
+    });
+
+    test("토큰 확보 실패: row는 있는데 토큰 필드가 비어있으면 그 이유를 명시한다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue(null);
+        const ctx = {
+            prisma: {
+                eveCharacter: {
+                    findUnique: jest.fn().mockResolvedValue({
+                        characterId: 2118088983n,
+                        accessToken: null,
+                        refreshToken: null,
+                        tokenExpiresAt: null,
+                    }),
+                },
+            },
+        };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(false);
+        expect(out.data.description).toContain("토큰 필드가 비어있음");
+    });
+
     test("구조물 필터: 사무실 컨테이너를 한 단계 더 거친 CorpSAG 항목도 찾는다(깊이 무관 BFS)", async () => {
         mockFetchSequence({ assets: buildNestedAssets() });
         const ctx = { prisma: {} };

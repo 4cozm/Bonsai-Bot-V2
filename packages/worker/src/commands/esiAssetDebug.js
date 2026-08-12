@@ -407,8 +407,25 @@ export default {
         // ── 2단계: 토큰 확보 ────────────────────────────────────
         const accessToken = await getAccessTokenForCharacter(prisma, characterId, { log });
         if (!accessToken) {
-            steps.push({ name: "2단계 · 토큰", value: "❌ 확보 실패(만료/미등록)", inline: false });
-            return fail("2. 토큰 확보", "getAccessTokenForCharacter 가 null을 반환했습니다.");
+            // "null 반환"만으로는 row 자체가 없는 건지, row는 있는데 토큰 필드가
+            // 비어있는 건지 구분이 안 된다 — 원인을 바로 알 수 있게 DB를 직접 본다.
+            const row = await prisma.eveCharacter.findUnique({ where: { characterId } });
+            const reason = !row
+                ? "eveCharacter 테이블에 이 characterId row 자체가 없음 — /가입 으로 등록 필요"
+                : !row.accessToken || !row.refreshToken
+                  ? `row는 있으나 토큰 필드가 비어있음(accessToken=${row.accessToken ? "있음" : "없음"}, refreshToken=${row.refreshToken ? "있음" : "없음"}) — /가입 재시도 필요`
+                  : "row·토큰 다 있는데 refresh 실패 — EVE_ESI_CLIENT_ID/SECRET 또는 refresh_token 만료 확인 필요";
+            steps.push({
+                name: "2단계 · 토큰",
+                value: truncate(
+                    `❌ 확보 실패\n${reason}` +
+                        (row?.tokenExpiresAt
+                            ? `\ntokenExpiresAt=${row.tokenExpiresAt.toISOString()}`
+                            : "")
+                ),
+                inline: false,
+            });
+            return fail("2. 토큰 확보", reason);
         }
         steps.push({ name: "2단계 · 토큰", value: "✅ 확보 성공", inline: false });
 
