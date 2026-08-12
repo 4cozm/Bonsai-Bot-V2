@@ -82,10 +82,21 @@ async function fetchAllCorpAssets(corporationId, accessToken) {
 
 // location_type: "solar_system" 인데 콥 행어(CorpSAG) 자체가 있을 수 없는 type_id.
 // 실측으로 확인함(2026-08-12) — 2233 은 세관 사무소(POCO, 행성 세금 수취 용도라
-// 인벤토리 개념이 아예 없음), 12235 는 아마르 관제타워(구식 POS, Upwell 구조물이
-// 아니라 CorpSAG 체계 자체를 안 씀). 다른 종족 관제타워(가라니, 칼다리, 미네matar)나
-// 다른 세관 사무소 변형이 나오면 여기 추가한다.
-const NON_HANGAR_STRUCTURE_TYPE_IDS = new Set([2233, 12235]);
+// 인벤토리 개념이 아예 없음), 12235/20060 은 아마르 관제타워(구식 POS, 종족·크기별로
+// type_id 가 다 다르다 — Upwell 구조물이 아니라 CorpSAG 체계 자체를 안 씀). 다른
+// 종족/크기 관제타워나 다른 세관 사무소 변형이 나오면 여기 추가한다.
+const NON_HANGAR_STRUCTURE_TYPE_IDS = new Set([2233, 12235, 20060]);
+
+// 구조물 옵션에 이 값을 넣으면 특정 구조물 하나가 아니라 후보 전부를 한 번에
+// 스캔한다 — 10개를 하나씩 손으로 드릴다운하지 않아도 되게 하려는 용도.
+const ALL_STRUCTURES_TRIGGERS = new Set(["전체", "all", "ALL"]);
+
+// group_id: 1406 = Refinery(Tatara/Athanor). 이 구조물 종류는 CCP 가 애초에 콥
+// 행어(오피스) 기능을 넣지 않았다 — Corporate Hangar Array 를 어떻게 붙이든 구조적
+// 으로 CorpSAG 가 나올 수 없다. Citadel/Engineering Complex 와 달리 "서비스를
+// 안 붙여서"가 아니라 "이 구조물 종류 자체가 지원 안 함"이라 스캔 결과에 이유를
+// 같이 적어 준다.
+const REFINERY_GROUP_ID = 1406;
 
 /**
  * 콥 자산 안에서 "구조물(건물)로 보이는" 후보를 찾는다.
@@ -98,14 +109,61 @@ const NON_HANGAR_STRUCTURE_TYPE_IDS = new Set([2233, 12235]);
  *
  * 다만 solar_system 타입이 전부 "행어 있는 건물"은 아니다 — POCO나 구식 POS
  * 관제타워도 여기 같이 잡히는데, 이것들은 애초에 CorpSAG 자체가 없는 구조라
- * 후보에서 뺀다. Upwell 구조물(아즈벨 등)이라도 Corporate Hangar Array
- * 서비스 모듈을 안 붙였으면 여전히 CorpSAG 0건이 나올 수 있다 — 그건 이
- * 필터로 못 거르고, 구조물 옵션으로 직접 들어가서 확인해야 한다.
+ * 후보에서 뺀다.
+ *
+ * Citadel/Engineering Complex(아즈벨·포티자 등)는 콥 행어가 별도 서비스 모듈 없이
+ * 내장 기능이다 — 그래서 "설치가 안 됐다"가 아니라 "그 행어 탭에 물건을 하나도
+ * 안 넣어놨다"가 CorpSAG 0건의 실제 의미다. ESI 는 빈 division 에 대해 아무 행도
+ * 만들지 않는다(placeholder 없음). Refinery(타타라·아타노르, group_id=1406)는
+ * 예외 — 이 종류는 콥/오피스 기능 자체가 없어 항상 CorpSAG 가 있을 수 없다.
  */
 function findStructureCandidates(assets) {
     return assets.filter(
         (a) => a.location_type === "solar_system" && !NON_HANGAR_STRUCTURE_TYPE_IDS.has(a.type_id)
     );
+}
+
+/**
+ * rootLocationId 아래에 있는 자산을 깊이 상관없이 전부 찾는다(BFS).
+ *
+ * 처음엔 `location_id === 구조물 item_id`인 것만 보면 되는 줄 알았는데(1단계만),
+ * 실제 데이터로 확인해보니 콥 행어에 물건이 가득 차 있는데도 이 방식으로는 0건이
+ * 나오는 경우가 있었다 — 즉 구조물 바로 밑이 아니라 한 단계(또는 그 이상) 더
+ * 들어간 컨테이너 밑에 실제 내용물이 걸려 있는 케이스가 있다는 뜻이다. 그래서
+ * location_id 를 부모-자식 인덱스로 만들어 몇 단계든 내려가며 전부 모은다.
+ */
+function collectNestedAssets(rootLocationId, assets, maxDepth = 6) {
+    const childrenByParent = new Map();
+    for (const a of assets) {
+        const key = String(a.location_id);
+        if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+        childrenByParent.get(key).push(a);
+    }
+
+    const items = [];
+    const depthCounts = [];
+    const visited = new Set();
+    let frontier = [String(rootLocationId)];
+    let depth = 0;
+
+    while (frontier.length > 0 && depth < maxDepth) {
+        const nextFrontier = [];
+        let countAtDepth = 0;
+        for (const parentId of frontier) {
+            for (const child of childrenByParent.get(parentId) ?? []) {
+                if (visited.has(child.item_id)) continue;
+                visited.add(child.item_id);
+                items.push({ ...child, __depth: depth + 1 });
+                countAtDepth += 1;
+                nextFrontier.push(String(child.item_id));
+            }
+        }
+        depthCounts.push(countAtDepth);
+        frontier = nextFrontier;
+        depth += 1;
+    }
+
+    return { items, depthCounts, maxDepthReached: depth };
 }
 
 /**
@@ -160,6 +218,34 @@ async function fetchAssetNames(corporationId, accessToken, itemIds) {
     return byId;
 }
 
+/**
+ * GET /universe/types/{id}/ — 공개 엔드포인트(인증 불필요). type_id 가 실제로 뭔지
+ * (포티자/타타라 등)와 group_id 를 준다. 구조물 후보 목록에 type_id 숫자만 찍으면
+ * 사람이 매번 따로 찾아봐야 해서, 여기서 미리 붙여 준다.
+ */
+async function fetchTypeInfoBatch(typeIds) {
+    const unique = [...new Set(typeIds)];
+    const results = await Promise.all(
+        unique.map(async (id) => {
+            try {
+                const res = await fetch(
+                    `${ESI_BASE}/universe/types/${id}/?datasource=tranquility&language=ko`
+                );
+                if (!res.ok) return null;
+                const d = await res.json();
+                return { name: d.name, groupId: d.group_id };
+            } catch {
+                return null;
+            }
+        })
+    );
+    const byId = {};
+    unique.forEach((id, i) => {
+        if (results[i]) byId[id] = results[i];
+    });
+    return byId;
+}
+
 export default {
     name: "자산진단",
     discord: {
@@ -176,7 +262,8 @@ export default {
             {
                 type: 3, // STRING (item_id가 커서 INTEGER 옵션은 Discord 클라이언트에서 반올림될 수 있다)
                 name: "구조물",
-                description: "이 구조물(건물) item_id 안쪽만 보기 — 구조물 후보 목록에서 확인",
+                description:
+                    "이 구조물(건물) item_id 안쪽만 보기(깊이 무관). '전체' 입력 시 후보 전부 스캔",
                 required: false,
             },
             {
@@ -342,11 +429,66 @@ export default {
             inline: false,
         });
 
+        // ── (구조물:전체) 후보 전체 스캔 모드 ────────────────────
+        // 구조물 하나씩 손으로 넣어가며 드릴다운하는 대신, 후보 전부를 한 번에
+        // 훑어서 어디에 뭐가 얼마나 있는지 표로 보여준다.
+        const isAllStructuresScan =
+            structureIdOpt != null && ALL_STRUCTURES_TRIGGERS.has(String(structureIdOpt).trim());
+        if (isAllStructuresScan) {
+            const candidates = findStructureCandidates(assets);
+            const [typeInfo, nameMap] = await Promise.all([
+                fetchTypeInfoBatch(candidates.map((c) => c.type_id)),
+                candidates.length > 0
+                    ? fetchAssetNames(
+                          corporationId,
+                          accessToken,
+                          candidates.map((c) => c.item_id)
+                      )
+                    : Promise.resolve({}),
+            ]);
+
+            const lines = candidates.map((c) => {
+                const nested = collectNestedAssets(c.item_id, assets);
+                const corpSag = nested.items.filter((a) =>
+                    String(a.location_flag).startsWith("CorpSAG")
+                ).length;
+                const info = typeInfo[c.type_id];
+                const isRefinery = info?.groupId === REFINERY_GROUP_ID;
+                const label = nameMap[String(c.item_id)] ?? info?.name ?? `type_id=${c.type_id}`;
+                const note = isRefinery ? " ⚠️Refinery(콥행어 불가)" : "";
+                return `**${label}**${note}\n  item_id=${c.item_id} · 총 ${nested.items.length}건 · CorpSAG ${corpSag}건`;
+            });
+
+            steps.push({
+                name: `6단계 · 구조물 전체 스캔 (${candidates.length}개)`,
+                value: truncate(lines.join("\n") || "(구조물 후보 없음)"),
+                inline: false,
+            });
+
+            return {
+                ok: true,
+                data: {
+                    embed: true,
+                    title: "ESI 자산 진단 — 구조물 전체 스캔",
+                    description: `corporation_id=${corporationId} · characterId=${characterId}`,
+                    fields: steps,
+                    footer: "특정 구조물 안쪽을 더 보려면 /자산진단 구조물:<item_id> 로 드릴다운",
+                    color: 0xe8a33d,
+                    ephemeralReply: true,
+                },
+            };
+        }
+
         // ── 6단계: 분포 요약 ────────────────────────────────────
         // 두 필터를 함께 적용한다 — "구조물 X 안에서 CorpSAG1만" 처럼 조합 가능.
+        // 구조물 필터는 item_id 바로 밑(1단계) 자식만 보지 않는다 — 실제로 행어에
+        // 물건이 가득 차 있는데도 1단계만 보면 0건으로 나오는 경우가 확인됐다.
+        // BFS로 몇 단계든 내려가며 그 밑에 걸린 자산을 전부 모은다.
         let filtered = assets;
+        let nestedInfo = null;
         if (structureIdOpt) {
-            filtered = filtered.filter((a) => String(a.location_id) === String(structureIdOpt));
+            nestedInfo = collectNestedAssets(structureIdOpt, assets);
+            filtered = nestedInfo.items;
         }
         if (hangarFilter) {
             filtered = filtered.filter((a) => a.location_flag === hangarFilter);
@@ -382,11 +524,15 @@ export default {
                 .filter(Boolean)
                 .join(", ") || "없음";
 
+        const depthNote = nestedInfo
+            ? `\n깊이별 건수(1단계부터): ${nestedInfo.depthCounts.join(", ") || "0"} (최대 ${nestedInfo.maxDepthReached}단계까지 탐색)`
+            : "";
+
         steps.push({
             name: "6단계 · 분포 요약",
             value: truncate(
                 `필터: ${filterNote}\n` +
-                    `대상 ${filtered.length}건 · is_singleton=true ${singletonCount}건\n` +
+                    `대상 ${filtered.length}건 · is_singleton=true ${singletonCount}건${depthNote}\n` +
                     `**CorpSAG(행어) 계열 합계: ${corpSagTotal}건**\n` +
                     `location_type: ${typeLine}\n` +
                     `location_flag 상위 12:\n${topFlags}`
@@ -406,24 +552,29 @@ export default {
         // 필터와 무관하게 항상 전체 assets 기준으로 찾는다 — "다음에 뭘 구조물 옵션으로
         // 넣어야 하는지" 알려주는 안내 단계라서다.
         const structureCandidates = findStructureCandidates(assets);
-        let structureNames = {};
-        if (structureCandidates.length > 0) {
-            structureNames = await fetchAssetNames(
-                corporationId,
-                accessToken,
-                structureCandidates.map((a) => a.item_id)
-            );
-        }
+        const [structureNames, structureTypeInfo] = await Promise.all([
+            structureCandidates.length > 0
+                ? fetchAssetNames(
+                      corporationId,
+                      accessToken,
+                      structureCandidates.map((a) => a.item_id)
+                  )
+                : Promise.resolve({}),
+            fetchTypeInfoBatch(structureCandidates.map((a) => a.type_id)),
+        ]);
         const structureLines =
             structureCandidates
                 .map((a) => {
-                    const name = structureNames[String(a.item_id)];
-                    return `${a.item_id} · type_id=${a.type_id}${name ? ` · ${name}` : ""}`;
+                    const customName = structureNames[String(a.item_id)];
+                    const info = structureTypeInfo[a.type_id];
+                    const typeLabel = info?.name ?? `type_id=${a.type_id}`;
+                    const refineryNote = info?.groupId === REFINERY_GROUP_ID ? " ⚠️Refinery" : "";
+                    return `${a.item_id} · ${typeLabel}${refineryNote}${customName ? ` · ${customName}` : ""}`;
                 })
                 .join("\n") || "(location_type=solar_system 인 항목 없음)";
 
         steps.push({
-            name: `8단계 · 구조물 후보 (${structureCandidates.length}개, /assets/names/ 로 이름 조회)`,
+            name: `8단계 · 구조물 후보 (${structureCandidates.length}개)`,
             value: truncate(structureLines),
             inline: false,
         });
