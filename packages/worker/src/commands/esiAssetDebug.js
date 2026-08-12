@@ -669,26 +669,28 @@ export default {
             (a) => a.location_flag === "Cargo" || a.location_flag === "SecondaryStorage"
         );
         const cargoLikeTypeInfo = await fetchTypeInfoBatch(cargoLikeAssets.map((a) => a.type_id));
-        const byFlagThenStructure = {};
+        // location_id(구조물)별로 나열하면 관제타워 스트론튬처럼 "같은 아이템이
+        // 구조물마다 1개씩"인 경우 줄만 잔뜩 늘어나 중략에 밀려 정작 필요한
+        // 정보가 안 보인다. (flag, 아이템 이름)으로 묶어 총 개수 + 흩어진
+        // 구조물 수만 압축해서 보여준다.
+        const byFlagThenName = {};
         for (const a of cargoLikeAssets) {
-            const byLoc = (byFlagThenStructure[a.location_flag] ??= {});
-            (byLoc[String(a.location_id)] ??= []).push(a);
+            const byName = (byFlagThenName[a.location_flag] ??= {});
+            const name = cargoLikeTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
+            const entry = (byName[name] ??= { count: 0, locationIds: new Set() });
+            entry.count += 1;
+            entry.locationIds.add(String(a.location_id));
         }
         const cargoLines =
-            Object.entries(byFlagThenStructure)
-                .map(([flag, byLoc]) => {
-                    const locLines = Object.entries(byLoc)
-                        .map(([locId, items]) => {
-                            const names = items
-                                .map(
-                                    (a) =>
-                                        cargoLikeTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`
-                                )
-                                .join(", ");
-                            return `  location_id=${locId} (${items.length}건): ${names}`;
-                        })
+            Object.entries(byFlagThenName)
+                .map(([flag, byName]) => {
+                    const nameLines = Object.entries(byName)
+                        .map(
+                            ([name, { count, locationIds }]) =>
+                                `  ${name} x${count} (구조물 ${locationIds.size}곳)`
+                        )
                         .join("\n");
-                    return `${flag}:\n${locLines}`;
+                    return `${flag}:\n${nameLines}`;
                 })
                 .join("\n") || "(없음)";
 

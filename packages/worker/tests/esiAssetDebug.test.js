@@ -234,7 +234,8 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(systemScan.value).toContain("Fortizar x1");
     });
 
-    test("10단계: Cargo/SecondaryStorage 안의 실제 아이템 이름을 구조물별로 보여준다", async () => {
+    test("10단계: Cargo/SecondaryStorage 를 (flag, 아이템 이름)으로 묶어 구조물 수까지 압축해서 보여준다", async () => {
+        const OTHER_STRUCTURE_ITEM_ID = 1051025995561;
         const cargoAssets = [
             ...buildNestedAssets(),
             {
@@ -242,18 +243,27 @@ describe("worker/commands/esiAssetDebug", () => {
                 type_id: 47140,
                 location_id: STRUCTURE_ITEM_ID,
                 location_type: "item",
-                location_flag: "Cargo",
+                location_flag: "SecondaryStorage",
                 is_singleton: false,
-                quantity: 3,
+                quantity: 1,
             },
             {
                 item_id: 11,
                 type_id: 47140,
-                location_id: STRUCTURE_ITEM_ID,
+                location_id: OTHER_STRUCTURE_ITEM_ID,
                 location_type: "item",
                 location_flag: "SecondaryStorage",
                 is_singleton: false,
                 quantity: 1,
+            },
+            {
+                item_id: 12,
+                type_id: 47140,
+                location_id: STRUCTURE_ITEM_ID,
+                location_type: "item",
+                location_flag: "Cargo",
+                is_singleton: false,
+                quantity: 3,
             },
         ];
         mockFetchSequence({ assets: cargoAssets });
@@ -265,9 +275,11 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(out.ok).toBe(true);
         const cargoScan = out.data.fields.find((f) => f.name.startsWith("10단계"));
         expect(cargoScan).toBeDefined();
-        expect(cargoScan.name).toContain("2건");
+        expect(cargoScan.name).toContain("3건");
         expect(cargoScan.value).toContain("Cargo:");
         expect(cargoScan.value).toContain("SecondaryStorage:");
-        expect(cargoScan.value).toContain(`location_id=${STRUCTURE_ITEM_ID}`);
+        // 같은 이름의 아이템이 서로 다른 두 구조물에 1개씩 있으면 location_id별로 줄이
+        // 늘어나지 않고 "x2 (구조물 2곳)"으로 압축되어야 한다.
+        expect(cargoScan.value).toContain("Fortizar x2 (구조물 2곳)");
     });
 });
