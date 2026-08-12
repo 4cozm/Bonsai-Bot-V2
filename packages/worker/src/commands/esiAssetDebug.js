@@ -80,6 +80,71 @@ async function fetchAllCorpAssets(corporationId, accessToken) {
     return { ok: true, assets, totalPages };
 }
 
+/**
+ * 콥 자산 안에서 "구조물(건물)로 보이는" 후보를 찾는다.
+ *
+ * ESI location_type enum에는 "structure"가 따로 없다 — 구조물 자체는
+ * location_type: "solar_system" 인 행 하나로 나타난다(그 구조물의 item_id를
+ * 갖는다). 그 구조물 **안**의 콥 행어는 정거장과 똑같이 location_flag:
+ * CorpSAG1~7 을 쓰지만, location_id 가 정거장 ID가 아니라 이 구조물의
+ * item_id를 가리키는 자식 행들로 나타난다 — 그래서 한 단계 더 파야 한다.
+ */
+function findStructureCandidates(assets) {
+    return assets.filter((a) => a.location_type === "solar_system");
+}
+
+/**
+ * GET /corporations/{id}/divisions/ — 콥 행어(CorpSAG1~7)·지갑 디비전의 커스텀 이름.
+ * "탄약", "모듈"처럼 콥이 직접 붙인 이름이 여기서 나온다 — CorpSAG1~7 자체는 ESI가
+ * 매기는 슬롯 번호일 뿐 표시 이름이 아니다.
+ *
+ * 이름을 안 바꾼 디비전은 응답 배열에 아예 안 나온다(ESI 특성) — 그래서 못 찾으면
+ * "실패"가 아니라 "기본 이름"으로 다룬다. 스코프(esi-corporations.read_divisions.v1)가
+ * 없어도 이 단계만 건너뛰고 나머지는 계속 진행한다 — 이름 조회는 부가 정보지 자산
+ * 조회의 필수 조건이 아니다.
+ *
+ * @returns {Promise<{ok:boolean, hangarNames?: Record<number,string>, status?: number}>}
+ */
+async function fetchDivisionNames(corporationId, accessToken) {
+    const res = await fetch(
+        `${ESI_BASE}/corporations/${corporationId}/divisions/?datasource=tranquility`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) return { ok: false, status: res.status };
+    const data = await res.json();
+    const hangarNames = {};
+    for (const h of data?.hangar ?? []) {
+        if (h?.division != null && h?.name) hangarNames[h.division] = h.name;
+    }
+    return { ok: true, hangarNames };
+}
+
+/** CorpSAG1 형태의 flag 를 "CorpSAG1(탄약)" 처럼 실제 디비전 이름을 붙여 표시한다. */
+function labelFlag(flag, hangarNames) {
+    const m = /^CorpSAG(\d)$/.exec(String(flag ?? ""));
+    if (!m) return flag;
+    const name = hangarNames?.[Number(m[1])];
+    return name ? `${flag}(${name})` : flag;
+}
+
+/** POST /assets/names/ — 아이템(구조물·컨테이너·함선 등)의 커스텀 이름을 배치로 받는다. */
+async function fetchAssetNames(corporationId, accessToken, itemIds) {
+    if (itemIds.length === 0) return {};
+    const res = await fetch(
+        `${ESI_BASE}/corporations/${corporationId}/assets/names/?datasource=tranquility`,
+        {
+            method: "POST",
+            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify(itemIds),
+        }
+    );
+    if (!res.ok) return {};
+    const rows = await res.json();
+    const byId = {};
+    for (const r of rows) byId[String(r.item_id)] = r.name;
+    return byId;
+}
+
 export default {
     name: "자산진단",
     discord: {
@@ -91,6 +156,19 @@ export default {
                 type: 3, // STRING
                 name: "행어",
                 description: "이 행어만 보기 (예: CorpSAG1). 생략하면 전체 요약만",
+                required: false,
+            },
+            {
+                type: 3, // STRING (item_id가 커서 INTEGER 옵션은 Discord 클라이언트에서 반올림될 수 있다)
+                name: "구조물",
+                description: "이 구조물(건물) item_id 안쪽만 보기 — 구조물 후보 목록에서 확인",
+                required: false,
+            },
+            {
+                type: 5, // BOOLEAN
+                name: "상세",
+                description:
+                    "이미 검증된 앵커/토큰/스코프/자산조회 단계도 매번 자세히 보기 (기본: 한 줄로 요약)",
                 required: false,
             },
         ],
@@ -118,7 +196,11 @@ export default {
             return { ok: false, data: { error: "시스템 설정 오류", ephemeralReply: true } };
         }
 
-        const { 행어: hangarFilter } = parseArgs(envelope?.args);
+        const {
+            행어: hangarFilter,
+            구조물: structureIdOpt,
+            상세: detailed,
+        } = parseArgs(envelope?.args);
 
         // 단계별로 쌓아서, 어디서 막히든 여기까지의 결과를 그대로 회신한다.
         const steps = [];
@@ -211,10 +293,49 @@ export default {
             { assets }
         );
 
-        // ── 5단계: 분포 요약 ────────────────────────────────────
-        const filtered = hangarFilter
-            ? assets.filter((a) => a.location_flag === hangarFilter)
-            : assets;
+        // 여기 도달했다는 건 1~4단계가 전부 성공했다는 뜻이다. 실패였다면 위의 각
+        // fail() 호출이 그 시점까지의 steps 를 그대로 써서 이미 리턴했다 — 즉 실패
+        // 경로는 이 collapse 와 무관하게 항상 자세히 나간다. 상세:true 가 아니면
+        // 매번 똑같이 통과하는 이 네 단계를 한 줄로 접어서, 실제로 궁금한 5단계
+        // 이후만 눈에 띄게 한다.
+        if (detailed !== true) {
+            steps.length = 0;
+            steps.push({
+                name: "1~4단계 · 사전 확인",
+                value: `✅ 앵커 · 토큰 · 스코프 · 자산 조회(${assets.length}건) 전부 정상 (상세:true 로 펼쳐보기)`,
+                inline: false,
+            });
+        }
+
+        // ── 5단계: 행어(디비전) 실제 이름 ────────────────────────
+        // CorpSAG1~7 은 ESI 가 매기는 슬롯 번호일 뿐, "탄약"/"모듈"처럼 콥이 붙인
+        // 표시 이름이 아니다 — 이 단계가 그 매핑을 가져온다. 실패해도 치명적이지
+        // 않으니(부가 정보) 나머지 단계는 계속 진행한다.
+        const divResult = await fetchDivisionNames(corporationId, accessToken);
+        const hangarNames = divResult.ok ? divResult.hangarNames : {};
+        steps.push({
+            name: "5단계 · 행어 이름 (divisions)",
+            value: divResult.ok
+                ? truncate(
+                      Object.keys(hangarNames).length > 0
+                          ? Object.entries(hangarNames)
+                                .map(([n, name]) => `CorpSAG${n}: ${name}`)
+                                .join("\n")
+                          : "(이름을 바꾼 행어가 없음 — 전부 기본 이름)"
+                  )
+                : `⚠️ 조회 실패(HTTP ${divResult.status}) — esi-corporations.read_divisions.v1 스코프 확인 필요. CorpSAG 번호로만 표시함`,
+            inline: false,
+        });
+
+        // ── 6단계: 분포 요약 ────────────────────────────────────
+        // 두 필터를 함께 적용한다 — "구조물 X 안에서 CorpSAG1만" 처럼 조합 가능.
+        let filtered = assets;
+        if (structureIdOpt) {
+            filtered = filtered.filter((a) => String(a.location_id) === String(structureIdOpt));
+        }
+        if (hangarFilter) {
+            filtered = filtered.filter((a) => a.location_flag === hangarFilter);
+        }
 
         const byFlag = {};
         const byType = {};
@@ -228,28 +349,67 @@ export default {
             Object.entries(byFlag)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 12)
-                .map(([k, v]) => `${k}: ${v}`)
+                .map(([k, v]) => `${labelFlag(k, hangarNames)}: ${v}`)
                 .join("\n") || "(없음)";
         const typeLine =
             Object.entries(byType)
                 .map(([k, v]) => `${k}: ${v}`)
                 .join(", ") || "(없음)";
 
+        // CorpSAG(행어) 합계는 top-12 에서 밀려 안 보일 수 있으니 항상 따로 명시한다 —
+        // "행어에 뭐가 있긴 한가?"가 이 명령의 실질적인 핵심 질문이라서다.
+        const corpSagTotal = Object.entries(byFlag)
+            .filter(([k]) => k.startsWith("CorpSAG"))
+            .reduce((sum, [, v]) => sum + v, 0);
+
+        const filterNote =
+            [structureIdOpt && `구조물:${structureIdOpt}`, hangarFilter && `행어:${hangarFilter}`]
+                .filter(Boolean)
+                .join(", ") || "없음";
+
         steps.push({
-            name: "5단계 · 분포 요약" + (hangarFilter ? ` (필터: ${hangarFilter})` : ""),
+            name: "6단계 · 분포 요약",
             value: truncate(
-                `대상 ${filtered.length}건 · is_singleton=true ${singletonCount}건\n` +
+                `필터: ${filterNote}\n` +
+                    `대상 ${filtered.length}건 · is_singleton=true ${singletonCount}건\n` +
+                    `**CorpSAG(행어) 계열 합계: ${corpSagTotal}건**\n` +
                     `location_type: ${typeLine}\n` +
                     `location_flag 상위 12:\n${topFlags}`
             ),
             inline: false,
         });
 
-        // ── 6단계: 샘플 원본 ────────────────────────────────────
+        // ── 7단계: 샘플 원본 ────────────────────────────────────
         const sample = filtered.slice(0, 3);
         steps.push({
-            name: `6단계 · 샘플 (앞 ${sample.length}개, 전체는 워커 로그)`,
+            name: `7단계 · 샘플 (앞 ${sample.length}개, 전체는 워커 로그)`,
             value: truncate("```json\n" + JSON.stringify(sample, null, 2) + "\n```"),
+            inline: false,
+        });
+
+        // ── 8단계: 구조물(건물) 후보 목록 ───────────────────────
+        // 필터와 무관하게 항상 전체 assets 기준으로 찾는다 — "다음에 뭘 구조물 옵션으로
+        // 넣어야 하는지" 알려주는 안내 단계라서다.
+        const structureCandidates = findStructureCandidates(assets);
+        let structureNames = {};
+        if (structureCandidates.length > 0) {
+            structureNames = await fetchAssetNames(
+                corporationId,
+                accessToken,
+                structureCandidates.map((a) => a.item_id)
+            );
+        }
+        const structureLines =
+            structureCandidates
+                .map((a) => {
+                    const name = structureNames[String(a.item_id)];
+                    return `${a.item_id} · type_id=${a.type_id}${name ? ` · ${name}` : ""}`;
+                })
+                .join("\n") || "(location_type=solar_system 인 항목 없음)";
+
+        steps.push({
+            name: `8단계 · 구조물 후보 (${structureCandidates.length}개, /assets/names/ 로 이름 조회)`,
+            value: truncate(structureLines),
             inline: false,
         });
 
@@ -257,10 +417,10 @@ export default {
             ok: true,
             data: {
                 embed: true,
-                title: "ESI 자산 진단" + (hangarFilter ? ` — ${hangarFilter}` : ""),
+                title: "ESI 자산 진단",
                 description: `corporation_id=${corporationId} · characterId=${characterId}`,
                 fields: steps,
-                footer: "필터: /자산진단 행어:CorpSAG1 처럼 location_flag 로 좁힐 수 있습니다.",
+                footer: "예: /자산진단 구조물:1038625987360 행어:CorpSAG1 — 7단계 후보의 item_id를 구조물에 넣으면 그 안쪽만 봅니다.",
                 color: 0xe8a33d,
                 ephemeralReply: true,
             },
