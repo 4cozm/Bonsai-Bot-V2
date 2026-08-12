@@ -6,6 +6,7 @@ import { runAutocompleteConsumer } from "../bus/autocompleteConsumer.js";
 import { runRedisStreamsCommandConsumer } from "../bus/redisStreamsCommandConsumer.js";
 import { ensureTenantDbAndMigrate, getPrisma } from "../db/prisma.js";
 import { startPajamaMonitor } from "../pajama/index.js";
+import { startStockSyncScheduler } from "../schedulers/stockSyncScheduler.js";
 import { startStructureAttackAlertScheduler } from "../schedulers/structureAttackAlertScheduler.js";
 
 const DB_CONNECT_RETRY_ATTEMPTS = 10;
@@ -146,6 +147,16 @@ export async function initializeWorker(opts = {}) {
     if (tenantKey !== "global" && !isDev) {
         startStructureAttackAlertScheduler({
             redis,
+            prisma,
+            tenantKey,
+            signal: ac.signal,
+            log,
+        });
+    }
+
+    // isDev면 재고 동기화 cron 미등록
+    if (tenantKey !== "global" && !isDev) {
+        startStockSyncScheduler({
             prisma,
             tenantKey,
             signal: ac.signal,
