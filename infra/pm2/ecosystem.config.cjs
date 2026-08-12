@@ -49,5 +49,15 @@ module.exports = {
             env: { RUN_MODE: "tenant-worker", TENANT: "FISH" },
             env_production: { RUN_MODE: "tenant-worker", TENANT: "FISH" },
         },
+        {
+            name: "api",
+            script: "apps/api/src/app.js",
+            watch: false,
+            autorestart: false,
+            max_restarts: 0,
+            // bonsai-supply 프론트용 REST API. 봇 워커들과 무관한 별도 프로세스.
+            env: { RUN_MODE: "api" },
+            env_production: { RUN_MODE: "api" },
+        },
     ],
 };

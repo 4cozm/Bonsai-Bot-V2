@@ -1,0 +1,13 @@
+{
+    "name": "@bonsai/api",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.js"
+    },
+    "dependencies": {
+        "@bonsai/shared": "*",
+        "express": "^5.2.1"
+    }
+}
