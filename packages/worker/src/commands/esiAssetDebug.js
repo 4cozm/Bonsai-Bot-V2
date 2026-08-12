@@ -80,6 +80,13 @@ async function fetchAllCorpAssets(corporationId, accessToken) {
     return { ok: true, assets, totalPages };
 }
 
+// location_type: "solar_system" 인데 콥 행어(CorpSAG) 자체가 있을 수 없는 type_id.
+// 실측으로 확인함(2026-08-12) — 2233 은 세관 사무소(POCO, 행성 세금 수취 용도라
+// 인벤토리 개념이 아예 없음), 12235 는 아마르 관제타워(구식 POS, Upwell 구조물이
+// 아니라 CorpSAG 체계 자체를 안 씀). 다른 종족 관제타워(가라니, 칼다리, 미네matar)나
+// 다른 세관 사무소 변형이 나오면 여기 추가한다.
+const NON_HANGAR_STRUCTURE_TYPE_IDS = new Set([2233, 12235]);
+
 /**
  * 콥 자산 안에서 "구조물(건물)로 보이는" 후보를 찾는다.
  *
@@ -88,9 +95,17 @@ async function fetchAllCorpAssets(corporationId, accessToken) {
  * 갖는다). 그 구조물 **안**의 콥 행어는 정거장과 똑같이 location_flag:
  * CorpSAG1~7 을 쓰지만, location_id 가 정거장 ID가 아니라 이 구조물의
  * item_id를 가리키는 자식 행들로 나타난다 — 그래서 한 단계 더 파야 한다.
+ *
+ * 다만 solar_system 타입이 전부 "행어 있는 건물"은 아니다 — POCO나 구식 POS
+ * 관제타워도 여기 같이 잡히는데, 이것들은 애초에 CorpSAG 자체가 없는 구조라
+ * 후보에서 뺀다. Upwell 구조물(아즈벨 등)이라도 Corporate Hangar Array
+ * 서비스 모듈을 안 붙였으면 여전히 CorpSAG 0건이 나올 수 있다 — 그건 이
+ * 필터로 못 거르고, 구조물 옵션으로 직접 들어가서 확인해야 한다.
  */
 function findStructureCandidates(assets) {
-    return assets.filter((a) => a.location_type === "solar_system");
+    return assets.filter(
+        (a) => a.location_type === "solar_system" && !NON_HANGAR_STRUCTURE_TYPE_IDS.has(a.type_id)
+    );
 }
 
 /**
