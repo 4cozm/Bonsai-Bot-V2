@@ -28,7 +28,12 @@ describe("shared/config/keys keySetsFor", () => {
         expect(out.sharedKeys).toContain("ESI_STATE_SECRET");
         expect(out.sharedKeys).toContain("EVE_ESI_CLIENT_ID");
         expect(out.sharedKeys).toContain("EVE_ESI_SCOPE");
-        expect(out.tenantKeys).toEqual(["EVE_ANCHOR_CHARIDS", "TENANT_ALERT_WEBHOOK_URL"]);
+        expect(out.sharedKeys).toContain("STOCK_API_BASE_URL");
+        expect(out.tenantKeys).toEqual([
+            "EVE_ANCHOR_CHARIDS",
+            "ADMIN_DISCORD_IDS",
+            "TENANT_ALERT_WEBHOOK_URL",
+        ]);
     });
 
     test("worker + isDev true → worker common만 추가, dev 전용 빈 배열", () => {
@@ -36,8 +41,22 @@ describe("shared/config/keys keySetsFor", () => {
         expect(out.sharedKeys).toContain("REDIS_URL");
         expect(out.sharedKeys).toContain("TENANT_DB_URL_TEMPLATE");
         // dev에서는 TENANT_ALERT_WEBHOOK_URL 미요구(연료 웹후크 dev 미사용)
-        expect(out.tenantKeys).toEqual(["EVE_ANCHOR_CHARIDS"]);
+        expect(out.tenantKeys).toEqual(["EVE_ANCHOR_CHARIDS", "ADMIN_DISCORD_IDS"]);
         expect(out.tenantKeys).not.toContain("TENANT_ALERT_WEBHOOK_URL");
+    });
+
+    test("api + isDev false → api 전용 키만, globalKeys(디스코드/ESI) 미포함", () => {
+        const out = keySetsFor({ role: "api", isDev: false });
+        expect(out.tenantKeys).toEqual([]);
+        expect(out.sharedKeys).toEqual([
+            "REDIS_URL",
+            "TENANT_DB_URL_TEMPLATE",
+            "DATABASE_URL",
+            "STOCK_SESSION_JWT_SECRET",
+            "STOCK_FRONTEND_URL",
+        ]);
+        expect(out.sharedKeys).not.toContain("DISCORD_TOKEN");
+        expect(out.sharedKeys).not.toContain("EVE_ESI_CLIENT_ID");
     });
 
     test("global + isDev false → global prod 키 포함", () => {

@@ -1,3 +1,5 @@
+export { issueMagicLinkToken, consumeMagicLinkToken } from "./auth/magicLink.js";
+export { signSessionJwt, verifySessionJwt } from "./auth/sessionJwt.js";
 export { buildCmdEnvelope, buildResultEnvelope } from "./bus/envelope.js";
 export { publishCmdToRedisStream } from "./bus/publishCmdToRedisStream.js";
 export { publishToGlobalCmdStream } from "./bus/publishToGlobalCmdStream.js";

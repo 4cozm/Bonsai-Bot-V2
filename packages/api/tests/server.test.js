@@ -4,7 +4,8 @@ import { createApp } from "../src/server.js";
 
 describe("api/server", () => {
     test("GET /health → ok:true", async () => {
-        const app = createApp();
+        const log = { info: () => {}, warn: () => {}, error: () => {} };
+        const app = createApp({ redis: {}, log });
         const server = app.listen(0);
         const { port } = server.address();
 

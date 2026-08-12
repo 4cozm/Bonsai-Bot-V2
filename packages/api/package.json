@@ -7,7 +7,9 @@
         ".": "./src/index.js"
     },
     "dependencies": {
+        "@bonsai/external": "*",
         "@bonsai/shared": "*",
+        "dotenv": "^17.2.3",
         "express": "^5.2.1"
     }
 }

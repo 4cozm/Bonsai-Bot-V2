@@ -3,13 +3,14 @@
 // app 조립만 담당 — 테스트에서 실제 포트를 열지 않고 바로 요청을 만들 수 있게 한다.
 
 import express from "express";
+import { createAuthRouter } from "./routes/auth.js";
 
 /**
- * Express app을 만든다. 아직은 헬스체크만 있고, 이후 인증(/보급 매직링크 → JWT
- * 쿠키)과 재고 조회 라우트가 여기에 mount된다.
+ * Express app을 만든다.
+ * @param {{ redis: import("redis").RedisClientType, log: {info:Function, warn:Function, error:Function} }} deps
  * @returns {import("express").Express}
  */
-export function createApp() {
+export function createApp({ redis, log }) {
     const app = express();
     app.disable("x-powered-by");
     app.use(express.json());
@@ -17,6 +18,8 @@ export function createApp() {
     app.get("/health", (req, res) => {
         res.json({ ok: true, service: "bonsai-api" });
     });
+
+    app.use("/auth", createAuthRouter({ redis, log }));
 
     return app;
 }

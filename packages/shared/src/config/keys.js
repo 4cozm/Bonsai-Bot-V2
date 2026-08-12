@@ -7,10 +7,15 @@
  * - master: Discord 게이트웨이 (슬래시 명령 수신, SQS/Streams 발행).
  * - worker: Redis Streams 소비. TENANT=CAT|FISH|... 이면 테넌트 워커, TENANT=global 이면 전역(시세 등) 전용 워커.
  * - global: 오케스트레이터(Orchestrator). 전역 스케줄·ESI 콜백·전역 스트림 소비. (역할 이름이 "global"이지만 "global worker"와 구분됨.)
+ * - api: bonsai-supply 프론트용 REST API 서버(별도 pm2 프로세스). 봇 오케스트레이션과 무관해서
+ *   globalKeys(디스코드/ESI 관련)를 병합하지 않는다 — 필요한 키만 최소로 로드.
  *
  * --- sharedKeys vs tenantKeys ---
- * - sharedKeys: Key Vault에서 접두이 없이 로드해 process.env[키]에 주입. 모든 역할에서 "오케스트레이터용 키 + 해당 역할 전용 키"가 합쳐짐.
+ * - sharedKeys: Key Vault에서 접두이 없이 로드해 process.env[키]에 주입. 모든 역할에서 "오케스트레이터용 키 + 해당 역할 전용 키"가 합쳐짐(api 제외).
  * - tenantKeys: 테넌트 워커만 사용. Vault 이름이 {TENANT}-{KEY}(예: CAT-EVE-ANCHOR-CHARIDS). 오케스트레이터 및 TENANT=global 워커는 로드하지 않음(worker 초기화에서 빈 배열로 덮어씀).
+ *   api는 프로세스 하나가 여러 테넌트를 같이 다뤄서(TENANT 환경변수가 없음) 이 메커니즘을 못 쓴다 — 그래서
+ *   관리자 판정은 /보급 명령을 실행하는 워커(테넌트 단일 프로세스)에서 tenantKeys로 미리 하고, api는 그
+ *   결과(매직링크에 담긴 payload)만 신뢰한다.
  */
 
 function envName(isDev) {
@@ -50,6 +55,7 @@ export const ENV_REQUIRED = Object.freeze({
             "TENANT_DB_URL_TEMPLATE",
             "DATABASE_URL",
             "MYSQL_ADMIN_URL",
+            "STOCK_API_BASE_URL",
         ]),
         dev: Object.freeze([]),
         prod: Object.freeze([
@@ -58,6 +64,20 @@ export const ENV_REQUIRED = Object.freeze({
             "EVE_ESI_REDIRECT_URI",
             "EVE_ESI_SCOPE",
         ]),
+    }),
+
+    // api = bonsai-supply 프론트용 REST API(별도 pm2 프로세스). TENANT 환경변수가 없어
+    // 여러 테넌트를 한 프로세스에서 같이 다룬다 — 그래서 tenantKeys는 못 쓰고 전부 공용 네임스페이스.
+    api: Object.freeze({
+        common: Object.freeze([
+            "REDIS_URL",
+            "TENANT_DB_URL_TEMPLATE",
+            "DATABASE_URL",
+            "STOCK_SESSION_JWT_SECRET",
+            "STOCK_FRONTEND_URL",
+        ]),
+        dev: Object.freeze([]),
+        prod: Object.freeze([]),
     }),
 
     // global = 오케스트레이터(Orchestrator) 전용. sharedKeys 계산 시 이 키들이 모든 role에 선행 병합됨.
@@ -92,7 +112,7 @@ export const ENV_REQUIRED = Object.freeze({
  *   (dev 스케줄러 미동작, fuelDailyCheck도 빈 URL을 graceful 스킵)이라 dev vault 미등록을 허용.
  */
 export const WORKER_TENANT_REQUIRED = Object.freeze({
-    common: Object.freeze(["EVE_ANCHOR_CHARIDS"]),
+    common: Object.freeze(["EVE_ANCHOR_CHARIDS", "ADMIN_DISCORD_IDS"]),
     dev: Object.freeze([]),
     prod: Object.freeze(["TENANT_ALERT_WEBHOOK_URL"]),
 });
@@ -140,6 +160,14 @@ export function keySetsFor(ctx) {
     if (role === "global") {
         return {
             sharedKeys: [...globalKeys, ...roleKeys],
+            tenantKeys: [],
+        };
+    }
+
+    if (role === "api") {
+        // globalKeys(디스코드/ESI 오케스트레이션용)를 안 섞는다 — api는 그런 것과 무관.
+        return {
+            sharedKeys: roleKeys,
             tenantKeys: [],
         };
     }
