@@ -631,11 +631,16 @@ export default {
             officeAndHangarAssets
                 .map((a) => {
                     const typeName = officeTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
+                    // customName이 undefined면 이 item_id에 대해 ESI가 이름 자체를 안
+                    // 준 것(응답 목록에 아예 없음)이다 — "이름이 타입명이랑 같아서
+                    // 안 보여준 것"과는 다른 상태라 구분해서 표시한다.
+                    const hasCustomEntry = Object.hasOwn(officeCustomNames, String(a.item_id));
                     const customName = officeCustomNames[String(a.item_id)];
-                    const nameLabel =
-                        customName && customName !== typeName
-                            ? `${typeName} · 커스텀명:"${customName}"`
-                            : typeName;
+                    const nameLabel = !hasCustomEntry
+                        ? `${typeName} (ESI 이름 응답 없음)`
+                        : customName === typeName
+                          ? `${typeName} (기본값 그대로)`
+                          : `${typeName} · 커스텀명:"${customName}"`;
                     return `${labelFlag(a.location_flag, hangarNames)} · ${nameLabel} · item_id=${a.item_id} · location_id=${a.location_id} · 수량${a.quantity}`;
                 })
                 .join("\n") || "(행어·오피스 계열 flag 항목 0건)";

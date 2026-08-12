@@ -241,6 +241,66 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(officeScan.value).toContain(`Praxis · 커스텀명:"Praxis - Shield RR"`);
     });
 
+    test("ESI가 이름 목록에서 그 item_id를 아예 안 준 경우와 이름이 기본값 그대로인 경우를 구분한다", async () => {
+        const NO_NAME_ITEM_ID = 777000222;
+        const DEFAULT_NAME_ITEM_ID = 777000333;
+        const assets = [
+            ...buildNestedAssets(),
+            {
+                item_id: NO_NAME_ITEM_ID,
+                type_id: 47466,
+                location_id: OFFICE_ITEM_ID,
+                location_type: "item",
+                location_flag: "CorpSAG6",
+                is_singleton: true,
+                quantity: 1,
+            },
+            {
+                item_id: DEFAULT_NAME_ITEM_ID,
+                type_id: 47466,
+                location_id: OFFICE_ITEM_ID,
+                location_type: "item",
+                location_flag: "CorpSAG6",
+                is_singleton: true,
+                quantity: 1,
+            },
+        ];
+        global.fetch = jest.fn(async (url) => {
+            const u = String(url);
+            if (u.includes("/assets/?")) {
+                return { ok: true, headers: { get: () => "1" }, json: async () => assets };
+            }
+            if (u.includes("/divisions/")) {
+                return { ok: true, json: async () => ({ hangar: [] }) };
+            }
+            if (u.includes("/assets/names/")) {
+                // NO_NAME_ITEM_ID는 응답 배열에 아예 없음 — DEFAULT_NAME_ITEM_ID만
+                // 타입명과 똑같은 이름으로 옴(개명 안 한 함선의 실제 ESI 동작 재현).
+                return {
+                    ok: true,
+                    json: async () => [{ item_id: DEFAULT_NAME_ITEM_ID, name: "Praxis" }],
+                };
+            }
+            if (u.includes("/universe/types/")) {
+                return { ok: true, json: async () => ({ name: "Praxis", group_id: 513 }) };
+            }
+            return { ok: false, status: 404, text: async () => "" };
+        });
+        const ctx = { prisma: {} };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        expect(officeScan.value).toContain(`item_id=${NO_NAME_ITEM_ID}`);
+        expect(officeScan.value).toContain("(ESI 이름 응답 없음)");
+        expect(officeScan.value).toContain(`item_id=${DEFAULT_NAME_ITEM_ID}`);
+        expect(officeScan.value).toContain("(기본값 그대로)");
+    });
+
     test("Impounded/AssetSafety 처럼 CorpSAG가 아닌 행어 인접 flag도 잡아낸다", async () => {
         const impoundedAssets = [
             {
