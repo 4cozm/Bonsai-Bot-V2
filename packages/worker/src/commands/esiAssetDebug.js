@@ -661,6 +661,43 @@ export default {
             inline: false,
         });
 
+        // ── 10단계: Cargo/SecondaryStorage 내용물 확인 ──────────────
+        // 공식 스펙엔 Cargo/SecondaryStorage 각각이 정확히 뭘 뜻하는지 설명이
+        // 없다. 콥 행어 카테고리(드론/모듈/탄약/차지&스크립트/PI/마약/필라/
+        // 학습지 등)와 겹치는 아이템인지, 실제 이름을 까서 직접 비교해본다.
+        const cargoLikeAssets = assets.filter(
+            (a) => a.location_flag === "Cargo" || a.location_flag === "SecondaryStorage"
+        );
+        const cargoLikeTypeInfo = await fetchTypeInfoBatch(cargoLikeAssets.map((a) => a.type_id));
+        const byFlagThenStructure = {};
+        for (const a of cargoLikeAssets) {
+            const byLoc = (byFlagThenStructure[a.location_flag] ??= {});
+            (byLoc[String(a.location_id)] ??= []).push(a);
+        }
+        const cargoLines =
+            Object.entries(byFlagThenStructure)
+                .map(([flag, byLoc]) => {
+                    const locLines = Object.entries(byLoc)
+                        .map(([locId, items]) => {
+                            const names = items
+                                .map(
+                                    (a) =>
+                                        cargoLikeTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`
+                                )
+                                .join(", ");
+                            return `  location_id=${locId} (${items.length}건): ${names}`;
+                        })
+                        .join("\n");
+                    return `${flag}:\n${locLines}`;
+                })
+                .join("\n") || "(없음)";
+
+        steps.push({
+            name: `10단계 · Cargo/SecondaryStorage 내용물 (${cargoLikeAssets.length}건)`,
+            value: truncate(cargoLines),
+            inline: false,
+        });
+
         return {
             ok: true,
             data: {

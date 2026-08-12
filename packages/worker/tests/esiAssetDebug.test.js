@@ -233,4 +233,41 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(systemScan.value).toContain("성계 location_id=30000142");
         expect(systemScan.value).toContain("Fortizar x1");
     });
+
+    test("10단계: Cargo/SecondaryStorage 안의 실제 아이템 이름을 구조물별로 보여준다", async () => {
+        const cargoAssets = [
+            ...buildNestedAssets(),
+            {
+                item_id: 10,
+                type_id: 47140,
+                location_id: STRUCTURE_ITEM_ID,
+                location_type: "item",
+                location_flag: "Cargo",
+                is_singleton: false,
+                quantity: 3,
+            },
+            {
+                item_id: 11,
+                type_id: 47140,
+                location_id: STRUCTURE_ITEM_ID,
+                location_type: "item",
+                location_flag: "SecondaryStorage",
+                is_singleton: false,
+                quantity: 1,
+            },
+        ];
+        mockFetchSequence({ assets: cargoAssets });
+        const ctx = { prisma: {} };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const cargoScan = out.data.fields.find((f) => f.name.startsWith("10단계"));
+        expect(cargoScan).toBeDefined();
+        expect(cargoScan.name).toContain("2건");
+        expect(cargoScan.value).toContain("Cargo:");
+        expect(cargoScan.value).toContain("SecondaryStorage:");
+        expect(cargoScan.value).toContain(`location_id=${STRUCTURE_ITEM_ID}`);
+    });
 });
