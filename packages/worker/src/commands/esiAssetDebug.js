@@ -91,6 +91,25 @@ const NON_HANGAR_STRUCTURE_TYPE_IDS = new Set([2233, 12235, 20060]);
 // 스캔한다 — 10개를 하나씩 손으로 드릴다운하지 않아도 되게 하려는 용도.
 const ALL_STRUCTURES_TRIGGERS = new Set(["전체", "all", "ALL"]);
 
+// CorpSAG1~7/OfficeFolder 말고도 콥 소유 자산이 걸릴 수 있는 flag들 — 공식
+// location_flag enum 전체를 확인해서 뽑았다. Impounded(오피스 임대 문제 등으로
+// 강제 압류), AssetSafety(구조물 파괴/철거 시 자산 보호소로 이동)면 콥 행어에
+// 실제로 넣어둔 물건이라도 CorpSAG가 아니라 이 flag들로 나타난다.
+const HANGAR_ADJACENT_FLAGS = new Set([
+    "OfficeFolder",
+    "Impounded",
+    "AssetSafety",
+    "CorpDeliveries",
+    "CorporationGoalDeliveries",
+    "InfrastructureHangar",
+    "FleetHangar",
+    "Hangar",
+    "HangarAll",
+]);
+function isHangarAdjacentFlag(flag) {
+    return HANGAR_ADJACENT_FLAGS.has(flag) || String(flag ?? "").startsWith("CorpSAG");
+}
+
 // group_id: 1406 = Refinery(Tatara/Athanor). 이 구조물 종류는 CCP 가 애초에 콥
 // 행어(오피스) 기능을 넣지 않았다 — Corporate Hangar Array 를 어떻게 붙이든 구조적
 // 으로 CorpSAG 가 나올 수 없다. Citadel/Engineering Complex 와 달리 "서비스를
@@ -429,16 +448,22 @@ export default {
             inline: false,
         });
 
-        // ── OfficeFolder/CorpSAG 전수 검색 ───────────────────────
+        // ── 행어·오피스 계열 전수 검색 ───────────────────────────
         // ESI 공식 문서 기준 콥 행어는 "구조물 → OfficeFolder(오피스) → CorpSAG1~7
-        // → 아이템" 순으로 한 단계 더 감싸져 있다(OfficeFolder item_id 가 구조물과
-        // CorpSAG 를 이어주는 링크). 분포 요약의 상위 12 는 건수가 적으면 거기 밀려
-        // 안 보일 수 있으니, 필터·드릴다운과 무관하게 전체 자산에서 OfficeFolder·
-        // CorpSAGx 플래그를 가진 항목을 직접 찾아 하나도 빠짐없이 보여준다.
-        const officeAndHangarAssets = assets.filter(
-            (a) =>
-                a.location_flag === "OfficeFolder" || String(a.location_flag).startsWith("CorpSAG")
-        );
+        // → 아이템" 순으로 한 단계 더 감싸져 있다. CorpSAG/OfficeFolder뿐 아니라
+        // Impounded(압류)·AssetSafety(자산 보호소)처럼 콥이 넣어둔 물건이 다른
+        // flag로 나타나는 경우도 있어서 HANGAR_ADJACENT_FLAGS 전체로 찾는다.
+        // 분포 요약의 상위 12는 건수가 적으면 거기 밀려 안 보일 수 있으니, 필터·
+        // 드릴다운과 무관하게 전체 자산에서 직접 찾아 하나도 빠짐없이 보여준다.
+        const officeAndHangarAssets = assets.filter((a) => isHangarAdjacentFlag(a.location_flag));
+        const officeFlagCounts = {};
+        for (const a of officeAndHangarAssets) {
+            officeFlagCounts[a.location_flag] = (officeFlagCounts[a.location_flag] ?? 0) + 1;
+        }
+        const officeSummaryLine =
+            Object.entries(officeFlagCounts)
+                .map(([flag, count]) => `${labelFlag(flag, hangarNames)}: ${count}건`)
+                .join(", ") || "0건";
         const officeLines =
             officeAndHangarAssets
                 .map(
@@ -446,10 +471,10 @@ export default {
                         `${labelFlag(a.location_flag, hangarNames)} · item_id=${a.item_id} · location_id=${a.location_id} · type_id=${a.type_id} · 수량${a.quantity}`
                 )
                 .join("\n") ||
-            "(전체 자산 중 OfficeFolder/CorpSAG 플래그 항목 0건 — 이 콥 자산엔 오피스 체인 자체가 없음)";
+            "(전체 자산 중 행어·오피스 계열 flag 항목 0건 — 이 콥 자산엔 오피스 체인 자체가 없음)";
         steps.push({
-            name: `OfficeFolder/CorpSAG 전수 검색 (전체 ${assets.length}건 중 ${officeAndHangarAssets.length}건)`,
-            value: truncate(officeLines),
+            name: `행어·오피스 계열 전수 검색 (전체 ${assets.length}건 중 ${officeAndHangarAssets.length}건)`,
+            value: truncate(`요약: ${officeSummaryLine}\n${officeLines}`),
             inline: false,
         });
 

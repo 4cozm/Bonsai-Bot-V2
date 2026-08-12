@@ -144,7 +144,7 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(scan.value).toContain("CorpSAG 2건");
     });
 
-    test("OfficeFolder/CorpSAG 전수 검색: top-12 컷과 무관하게 전체에서 직접 찾는다", async () => {
+    test("행어·오피스 계열 전수 검색: top-12 컷과 무관하게 전체에서 직접 찾는다", async () => {
         mockFetchSequence({ assets: buildNestedAssets() });
         const ctx = { prisma: {} };
         const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
@@ -153,7 +153,7 @@ describe("worker/commands/esiAssetDebug", () => {
 
         expect(out.ok).toBe(true);
         const officeScan = out.data.fields.find((f) =>
-            f.name.startsWith("OfficeFolder/CorpSAG 전수 검색")
+            f.name.startsWith("행어·오피스 계열 전수 검색")
         );
         expect(officeScan).toBeDefined();
         expect(officeScan.name).toContain("3건");
@@ -161,7 +161,33 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(officeScan.value).toContain("CorpSAG1");
     });
 
-    test("OfficeFolder/CorpSAG 가 전체 자산에 하나도 없으면 0건으로 명시한다", async () => {
+    test("Impounded/AssetSafety 처럼 CorpSAG가 아닌 행어 인접 flag도 잡아낸다", async () => {
+        const impoundedAssets = [
+            {
+                item_id: 5,
+                type_id: 34,
+                location_id: STRUCTURE_ITEM_ID,
+                location_type: "item",
+                location_flag: "Impounded",
+                is_singleton: false,
+                quantity: 10,
+            },
+        ];
+        mockFetchSequence({ assets: impoundedAssets });
+        const ctx = { prisma: {} };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        expect(officeScan.name).toContain("1건");
+        expect(officeScan.value).toContain("Impounded");
+    });
+
+    test("행어·오피스 계열이 전체 자산에 하나도 없으면 0건으로 명시한다", async () => {
         const fittingOnlyAssets = [
             {
                 item_id: STRUCTURE_ITEM_ID,
@@ -188,7 +214,7 @@ describe("worker/commands/esiAssetDebug", () => {
 
         expect(out.ok).toBe(true);
         const officeScan = out.data.fields.find((f) =>
-            f.name.startsWith("OfficeFolder/CorpSAG 전수 검색")
+            f.name.startsWith("행어·오피스 계열 전수 검색")
         );
         expect(officeScan.name).toContain("0건");
         expect(officeScan.value).toContain("오피스 체인 자체가 없음");
