@@ -1,10 +1,33 @@
 // packages/worker/tests/registerTrackedStructure.test.js
-import { describe, expect, jest, test } from "@jest/globals";
-import registerTrackedStructure from "../src/commands/registerTrackedStructure.js";
+import { beforeEach, describe, expect, jest, test } from "@jest/globals";
+
+const mockParseAnchorCharIds = jest.fn();
+const mockSyncStructure = jest.fn();
+
+await jest.unstable_mockModule("@bonsai/shared", () => ({
+    parseAnchorCharIds: mockParseAnchorCharIds,
+    logger: () => ({ info: () => {}, warn: () => {}, error: () => {} }),
+}));
+
+await jest.unstable_mockModule("../src/schedulers/stockSyncScheduler.js", () => ({
+    syncStructure: mockSyncStructure,
+}));
+
+const { default: registerTrackedStructure } =
+    await import("../src/commands/registerTrackedStructure.js");
 
 const ALLOWED_DISCORD_ID = "378543198953406464";
 
 describe("worker/commands/registerTrackedStructure", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        process.env.EVE_ANCHOR_CHARIDS = "98705746:2116660063,98641311:2115893596";
+        mockParseAnchorCharIds.mockReturnValue([
+            { corporationId: 98705746, characterId: 2116660063n },
+            { corporationId: 98641311, characterId: 2115893596n },
+        ]);
+    });
+
     test("허용되지 않은 유저 → ok:false, ephemeral", async () => {
         const ctx = { prisma: {} };
         const envelope = { meta: { discordUserId: "111" }, args: "{}" };
@@ -32,13 +55,14 @@ describe("worker/commands/registerTrackedStructure", () => {
         expect(ctx.prisma.trackedStructure.upsert).not.toHaveBeenCalled();
     });
 
-    test("정상 입력 → structureId를 BigInt로 변환해 upsert하고 결과를 보여준다", async () => {
+    test("정상 입력 → upsert 후 즉시 1회 동기화하고 결과를 같이 보여준다", async () => {
         const upsert = jest.fn().mockResolvedValue({
             structureId: 1051025995560n,
             corporationId: 98641311,
             displayName: "SAVE CAT",
             active: true,
         });
+        mockSyncStructure.mockResolvedValue({ ok: true, itemTypes: 42 });
         const ctx = { prisma: { trackedStructure: { upsert } } };
         const envelope = {
             meta: { discordUserId: ALLOWED_DISCORD_ID },
@@ -66,11 +90,15 @@ describe("worker/commands/registerTrackedStructure", () => {
                 active: true,
             },
         });
+        expect(mockSyncStructure).toHaveBeenCalledWith(
+            expect.objectContaining({ anchorCharacterId: 2115893596n })
+        );
         expect(out.data.description).toContain("SAVE CAT");
         expect(out.data.description).toContain("1051025995560");
+        expect(out.data.description).toContain("42종 기록됨");
     });
 
-    test("활성 옵션을 false로 주면 그대로 반영된다", async () => {
+    test("활성:false 로 등록하면 즉시 동기화는 스킵한다", async () => {
         const upsert = jest.fn().mockResolvedValue({
             structureId: 1051025995560n,
             corporationId: 98641311,
@@ -88,13 +116,33 @@ describe("worker/commands/registerTrackedStructure", () => {
             }),
         };
 
-        await registerTrackedStructure.execute(ctx, envelope);
+        const out = await registerTrackedStructure.execute(ctx, envelope);
 
-        expect(upsert).toHaveBeenCalledWith(
-            expect.objectContaining({
-                create: expect.objectContaining({ active: false }),
-                update: expect.objectContaining({ active: false }),
-            })
-        );
+        expect(mockSyncStructure).not.toHaveBeenCalled();
+        expect(out.data.description).toContain("비활성 상태라 스킵");
+    });
+
+    test("EVE_ANCHOR_CHARIDS에 해당 콥 앵커가 없으면 동기화를 시도하지 않고 경고한다", async () => {
+        mockParseAnchorCharIds.mockReturnValue([]);
+        const upsert = jest.fn().mockResolvedValue({
+            structureId: 1051025995560n,
+            corporationId: 555000111,
+            displayName: "Unknown Corp Structure",
+            active: true,
+        });
+        const ctx = { prisma: { trackedStructure: { upsert } } };
+        const envelope = {
+            meta: { discordUserId: ALLOWED_DISCORD_ID },
+            args: JSON.stringify({
+                구조물: "1051025995560",
+                콥: 555000111,
+                이름: "Unknown Corp Structure",
+            }),
+        };
+
+        const out = await registerTrackedStructure.execute(ctx, envelope);
+
+        expect(mockSyncStructure).not.toHaveBeenCalled();
+        expect(out.data.description).toContain("앵커가 없음");
     });
 });

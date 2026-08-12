@@ -1,5 +1,6 @@
 // packages/worker/src/commands/registerTrackedStructure.js
-import { logger } from "@bonsai/shared";
+import { logger, parseAnchorCharIds } from "@bonsai/shared";
+import { syncStructure } from "../schedulers/stockSyncScheduler.js";
 
 const log = logger();
 
@@ -106,6 +107,28 @@ export default {
             active: row.active,
         });
 
+        // 등록 직후 1회성으로 바로 조회해서, 정각 크론까지(최대 1시간) 기다리지
+        // 않고도 등록이 실제로 맞게 됐는지 바로 확인할 수 있게 한다.
+        let syncLine = "동기화: 비활성 상태라 스킵";
+        if (row.active) {
+            const anchor = parseAnchorCharIds(process.env.EVE_ANCHOR_CHARIDS).find(
+                (a) => a.corporationId === row.corporationId
+            );
+            if (!anchor) {
+                syncLine = `⚠️ 동기화: EVE_ANCHOR_CHARIDS에 corporationId=${row.corporationId} 앵커가 없음`;
+            } else {
+                const result = await syncStructure({
+                    prisma,
+                    structure: row,
+                    anchorCharacterId: anchor.characterId,
+                    log,
+                });
+                syncLine = result.ok
+                    ? `✅ 동기화: ${result.itemTypes}종 기록됨`
+                    : `⚠️ 동기화 실패: ${result.reason}`;
+            }
+        }
+
         return {
             ok: true,
             data: {
@@ -115,7 +138,8 @@ export default {
                     `**${row.displayName}**\n` +
                     `structureId=${row.structureId}\n` +
                     `corporationId=${row.corporationId}\n` +
-                    `active=${row.active}`,
+                    `active=${row.active}\n` +
+                    syncLine,
                 color: 0x5b9dd9,
                 ephemeralReply: true,
             },

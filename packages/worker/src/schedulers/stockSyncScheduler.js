@@ -91,7 +91,12 @@ export function aggregateHangarStock(structureId, assets) {
 
 /**
  * 구조물 하나를 동기화한다: 토큰 확보 → 콥 자산 조회 → 콥행어 집계 → StockLog 기록.
+ *
+ * 반환값은 크론 루프 자체는 안 쓰지만(fire-and-forget), 등록 명령에서 "방금 등록한
+ * 구조물이 실제로 몇 종류나 잡혔는지" 바로 보여주기 위해 결과를 알아야 해서 만든다.
+ *
  * @param {{ prisma: import("@prisma/client").PrismaClient, structure: {structureId: bigint, corporationId: number}, anchorCharacterId: bigint, log: {info:Function, warn:Function} }} params
+ * @returns {Promise<{ok:boolean, itemTypes?:number, reason?:string}>}
  */
 export async function syncStructure({ prisma, structure, anchorCharacterId, log }) {
     const accessToken = await getAccessTokenForCharacter(prisma, anchorCharacterId, { log });
@@ -99,7 +104,7 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
         log.warn("[stock-sync] 토큰 없음, 구조물 스킵", {
             structureId: String(structure.structureId),
         });
-        return;
+        return { ok: false, reason: "토큰 없음(만료/미등록)" };
     }
 
     const assets = await fetchAllCorpAssets(structure.corporationId, accessToken);
@@ -107,7 +112,7 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
         log.warn("[stock-sync] 콥 자산 조회 실패, 구조물 스킵", {
             structureId: String(structure.structureId),
         });
-        return;
+        return { ok: false, reason: "콥 자산 조회 실패" };
     }
 
     const stockByType = aggregateHangarStock(structure.structureId, assets);
@@ -127,6 +132,8 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
         structureId: String(structure.structureId),
         itemTypes: stockByType.size,
     });
+
+    return { ok: true, itemTypes: stockByType.size };
 }
 
 /**

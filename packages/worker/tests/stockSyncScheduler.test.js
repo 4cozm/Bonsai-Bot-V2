@@ -114,7 +114,7 @@ describe("stockSyncScheduler/syncStructure", () => {
         const prisma = { stockLog: { createMany: jest.fn() } };
         const log = { info: jest.fn(), warn: jest.fn() };
 
-        await syncStructure({
+        const result = await syncStructure({
             prisma,
             structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
             anchorCharacterId: 2115893596n,
@@ -123,6 +123,7 @@ describe("stockSyncScheduler/syncStructure", () => {
 
         expect(prisma.stockLog.createMany).not.toHaveBeenCalled();
         expect(log.warn).toHaveBeenCalled();
+        expect(result).toEqual({ ok: false, reason: "토큰 없음(만료/미등록)" });
     });
 
     test("정상 흐름: 콥 자산을 받아 집계해서 StockLog.createMany를 호출한다", async () => {
@@ -143,7 +144,7 @@ describe("stockSyncScheduler/syncStructure", () => {
         const prisma = { stockLog: { createMany: jest.fn().mockResolvedValue({ count: 1 }) } };
         const log = { info: jest.fn(), warn: jest.fn() };
 
-        await syncStructure({
+        const result = await syncStructure({
             prisma,
             structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
             anchorCharacterId: 2115893596n,
@@ -159,6 +160,7 @@ describe("stockSyncScheduler/syncStructure", () => {
                 }),
             ],
         });
+        expect(result).toEqual({ ok: true, itemTypes: 1 });
     });
 
     test("콥 자산 조회가 실패하면(non-ok) StockLog를 기록하지 않는다", async () => {
@@ -167,7 +169,7 @@ describe("stockSyncScheduler/syncStructure", () => {
         const prisma = { stockLog: { createMany: jest.fn() } };
         const log = { info: jest.fn(), warn: jest.fn() };
 
-        await syncStructure({
+        const result = await syncStructure({
             prisma,
             structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
             anchorCharacterId: 2115893596n,
@@ -176,5 +178,6 @@ describe("stockSyncScheduler/syncStructure", () => {
 
         expect(prisma.stockLog.createMany).not.toHaveBeenCalled();
         expect(log.warn).toHaveBeenCalled();
+        expect(result).toEqual({ ok: false, reason: "콥 자산 조회 실패" });
     });
 });
