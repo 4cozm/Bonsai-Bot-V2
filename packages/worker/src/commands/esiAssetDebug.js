@@ -135,6 +135,14 @@ const REFINERY_GROUP_ID = 1406;
  * 안 넣어놨다"가 CorpSAG 0건의 실제 의미다. ESI 는 빈 division 에 대해 아무 행도
  * 만들지 않는다(placeholder 없음). Refinery(타타라·아타노르, group_id=1406)는
  * 예외 — 이 종류는 콥/오피스 기능 자체가 없어 항상 CorpSAG 가 있을 수 없다.
+ *
+ * (정정) CorpSAG 항목은 "구조물 → OfficeFolder → CorpSAG" 처럼 오피스를 한 단계
+ * 거치지 않는다 — 정거장과 동일하게 구조물의 item_id를 location_id로 직접 가리키는
+ * 직속 자식이다. OfficeFolder는 "Office"라는 자산 자체에 붙는 flag일 뿐 CorpSAG의
+ * 부모 컨테이너가 아니다(location_flag는 자산 트리 구조와 무관). ESI 공식 문서의
+ * 관련 서술은 부정확하다는 게 커뮤니티에서 확인됨 — collectNestedAssets의 깊이
+ * 탐색은 컨테이너 안의 컨테이너(콥이 행어 안에 넣어둔 캔 등) 케이스를 위한 것이지
+ * 오피스 체인을 위한 게 아니다.
  */
 function findStructureCandidates(assets) {
     return assets.filter(
