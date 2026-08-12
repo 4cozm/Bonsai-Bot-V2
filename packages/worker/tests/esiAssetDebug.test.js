@@ -143,4 +143,54 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(scan.value).toContain(`item_id=${STRUCTURE_ITEM_ID}`);
         expect(scan.value).toContain("CorpSAG 2건");
     });
+
+    test("OfficeFolder/CorpSAG 전수 검색: top-12 컷과 무관하게 전체에서 직접 찾는다", async () => {
+        mockFetchSequence({ assets: buildNestedAssets() });
+        const ctx = { prisma: {} };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("OfficeFolder/CorpSAG 전수 검색")
+        );
+        expect(officeScan).toBeDefined();
+        expect(officeScan.name).toContain("3건");
+        expect(officeScan.value).toContain(`item_id=${OFFICE_ITEM_ID}`);
+        expect(officeScan.value).toContain("CorpSAG1");
+    });
+
+    test("OfficeFolder/CorpSAG 가 전체 자산에 하나도 없으면 0건으로 명시한다", async () => {
+        const fittingOnlyAssets = [
+            {
+                item_id: STRUCTURE_ITEM_ID,
+                type_id: 35833,
+                location_id: 30000142,
+                location_type: "solar_system",
+                location_flag: "AutoFit",
+                is_singleton: true,
+            },
+            {
+                item_id: 1,
+                type_id: 47140,
+                location_id: STRUCTURE_ITEM_ID,
+                location_type: "item",
+                location_flag: "FighterTube0",
+                is_singleton: true,
+            },
+        ];
+        mockFetchSequence({ assets: fittingOnlyAssets });
+        const ctx = { prisma: {} };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("OfficeFolder/CorpSAG 전수 검색")
+        );
+        expect(officeScan.name).toContain("0건");
+        expect(officeScan.value).toContain("오피스 체인 자체가 없음");
+    });
 });

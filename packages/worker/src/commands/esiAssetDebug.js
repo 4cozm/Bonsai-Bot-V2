@@ -429,6 +429,30 @@ export default {
             inline: false,
         });
 
+        // ── OfficeFolder/CorpSAG 전수 검색 ───────────────────────
+        // ESI 공식 문서 기준 콥 행어는 "구조물 → OfficeFolder(오피스) → CorpSAG1~7
+        // → 아이템" 순으로 한 단계 더 감싸져 있다(OfficeFolder item_id 가 구조물과
+        // CorpSAG 를 이어주는 링크). 분포 요약의 상위 12 는 건수가 적으면 거기 밀려
+        // 안 보일 수 있으니, 필터·드릴다운과 무관하게 전체 자산에서 OfficeFolder·
+        // CorpSAGx 플래그를 가진 항목을 직접 찾아 하나도 빠짐없이 보여준다.
+        const officeAndHangarAssets = assets.filter(
+            (a) =>
+                a.location_flag === "OfficeFolder" || String(a.location_flag).startsWith("CorpSAG")
+        );
+        const officeLines =
+            officeAndHangarAssets
+                .map(
+                    (a) =>
+                        `${labelFlag(a.location_flag, hangarNames)} · item_id=${a.item_id} · location_id=${a.location_id} · type_id=${a.type_id} · 수량${a.quantity}`
+                )
+                .join("\n") ||
+            "(전체 자산 중 OfficeFolder/CorpSAG 플래그 항목 0건 — 이 콥 자산엔 오피스 체인 자체가 없음)";
+        steps.push({
+            name: `OfficeFolder/CorpSAG 전수 검색 (전체 ${assets.length}건 중 ${officeAndHangarAssets.length}건)`,
+            value: truncate(officeLines),
+            inline: false,
+        });
+
         // ── (구조물:전체) 후보 전체 스캔 모드 ────────────────────
         // 구조물 하나씩 손으로 넣어가며 드릴다운하는 대신, 후보 전부를 한 번에
         // 훑어서 어디에 뭐가 얼마나 있는지 표로 보여준다.
