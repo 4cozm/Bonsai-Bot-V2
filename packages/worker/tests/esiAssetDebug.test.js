@@ -217,10 +217,10 @@ describe("worker/commands/esiAssetDebug", () => {
             f.name.startsWith("행어·오피스 계열 전수 검색")
         );
         expect(officeScan.name).toContain("0건");
-        expect(officeScan.value).toContain("오피스 체인 자체가 없음");
+        expect(officeScan.value).toContain("행어·오피스 계열 flag 항목 0건");
     });
 
-    test("9단계: 제외 필터 없이 성계별 solar_system 자산 전체를 보여준다", async () => {
+    test("9단계: 구조물 필터 없을 때만 성계별 solar_system 자산 전체를 보여준다", async () => {
         mockFetchSequence({ assets: buildNestedAssets() });
         const ctx = { prisma: {} };
         const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
@@ -234,52 +234,96 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(systemScan.value).toContain("Fortizar x1");
     });
 
-    test("10단계: Cargo/SecondaryStorage 를 (flag, 아이템 이름)으로 묶어 구조물 수까지 압축해서 보여준다", async () => {
-        const OTHER_STRUCTURE_ITEM_ID = 1051025995561;
-        const cargoAssets = [
+    test("구조물 필터를 걸면 8·9단계는 생략되고, 행어·오피스 검색도 그 구조물 범위로만 좁혀진다", async () => {
+        const OTHER_STRUCTURE_ID = 999999999;
+        const assets = [
             ...buildNestedAssets(),
             {
-                item_id: 10,
-                type_id: 47140,
-                location_id: STRUCTURE_ITEM_ID,
+                item_id: 50,
+                type_id: 99,
+                location_id: OTHER_STRUCTURE_ID,
                 location_type: "item",
-                location_flag: "SecondaryStorage",
+                location_flag: "Impounded",
                 is_singleton: false,
                 quantity: 1,
-            },
-            {
-                item_id: 11,
-                type_id: 47140,
-                location_id: OTHER_STRUCTURE_ITEM_ID,
-                location_type: "item",
-                location_flag: "SecondaryStorage",
-                is_singleton: false,
-                quantity: 1,
-            },
-            {
-                item_id: 12,
-                type_id: 47140,
-                location_id: STRUCTURE_ITEM_ID,
-                location_type: "item",
-                location_flag: "Cargo",
-                is_singleton: false,
-                quantity: 3,
             },
         ];
-        mockFetchSequence({ assets: cargoAssets });
+        mockFetchSequence({ assets });
         const ctx = { prisma: {} };
-        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+        const envelope = {
+            meta: { discordUserId: ALLOWED_DISCORD_ID },
+            args: JSON.stringify({ 구조물: String(STRUCTURE_ITEM_ID) }),
+        };
 
         const out = await esiAssetDebug.execute(ctx, envelope);
 
         expect(out.ok).toBe(true);
-        const cargoScan = out.data.fields.find((f) => f.name.startsWith("10단계"));
-        expect(cargoScan).toBeDefined();
-        expect(cargoScan.name).toContain("3건");
-        expect(cargoScan.value).toContain("Cargo:");
-        expect(cargoScan.value).toContain("SecondaryStorage:");
-        // 같은 이름의 아이템이 서로 다른 두 구조물에 1개씩 있으면 location_id별로 줄이
-        // 늘어나지 않고 "x2 (구조물 2곳)"으로 압축되어야 한다.
-        expect(cargoScan.value).toContain("Fortizar x2 (구조물 2곳)");
+        expect(out.data.fields.find((f) => f.name.startsWith("8단계"))).toBeUndefined();
+        expect(out.data.fields.find((f) => f.name.startsWith("9단계"))).toBeUndefined();
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        // 구조물 필터 범위 안(OfficeFolder 1 + CorpSAG1 2 = 3건)만 잡히고, 다른
+        // 구조물의 Impounded 항목은 안 섞여야 한다.
+        expect(officeScan.name).toContain("3건");
+        expect(officeScan.value).not.toContain("Impounded");
+    });
+
+    test("캐릭터 옵션: 지정한 characterId를 공개 ESI로 조회해 그 콥 기준으로 진행한다", async () => {
+        const OTHER_CHAR_ID = "2115893596";
+        const OTHER_CORP_ID = 555000111;
+        global.fetch = jest.fn(async (url) => {
+            const u = String(url);
+            if (u.includes(`/characters/${OTHER_CHAR_ID}/`)) {
+                return {
+                    ok: true,
+                    json: async () => ({ name: "Holding Alt", corporation_id: OTHER_CORP_ID }),
+                };
+            }
+            if (u.includes(`/corporations/${OTHER_CORP_ID}/assets/`)) {
+                return {
+                    ok: true,
+                    headers: { get: () => "1" },
+                    json: async () => buildNestedAssets(),
+                };
+            }
+            if (u.includes("/divisions/")) {
+                return { ok: true, json: async () => ({ hangar: [] }) };
+            }
+            if (u.includes("/universe/types/")) {
+                return { ok: true, json: async () => ({ name: "Fortizar", group_id: 1657 }) };
+            }
+            if (u.includes("/assets/names/")) {
+                return { ok: true, json: async () => [] };
+            }
+            return { ok: false, status: 404, text: async () => "" };
+        });
+        const ctx = { prisma: {} };
+        const envelope = {
+            meta: { discordUserId: ALLOWED_DISCORD_ID },
+            args: JSON.stringify({ 캐릭터: OTHER_CHAR_ID, 상세: true }),
+        };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const step1 = out.data.fields.find((f) => f.name.startsWith("1단계"));
+        expect(step1.name).toContain("수동 지정");
+        expect(step1.value).toContain(`corporationId=${OTHER_CORP_ID}`);
+        expect(step1.value).toContain("Holding Alt");
+    });
+
+    test("캐릭터 옵션: 공개 조회 실패하면 1단계에서 바로 실패 처리한다", async () => {
+        global.fetch = jest.fn(async () => ({ ok: false, status: 404 }));
+        const ctx = { prisma: {} };
+        const envelope = {
+            meta: { discordUserId: ALLOWED_DISCORD_ID },
+            args: JSON.stringify({ 캐릭터: "999" }),
+        };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(false);
+        expect(out.data.title).toContain("실패");
     });
 });

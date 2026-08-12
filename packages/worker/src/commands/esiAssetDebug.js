@@ -273,6 +273,19 @@ async function fetchTypeInfoBatch(typeIds) {
     return byId;
 }
 
+/**
+ * GET /characters/{id}/ — 공개 엔드포인트(인증 불필요). characterId로 소속 콥을
+ * 알아낸다. 캐릭터 옵션으로 앵커를 갈아끼울 때, "이 캐릭터가 실제로 어느 콥
+ * 소속인지"를 env의 EVE_ANCHOR_CHARIDS에 기대지 않고 직접 확인하기 위함이다
+ * — 건물 소유 콥과 콥행어(오피스)를 실제로 들고 있는 콥이 다를 수 있어서다.
+ */
+async function fetchCharacterPublicInfo(characterId) {
+    const res = await fetch(`${ESI_BASE}/characters/${characterId}/?datasource=tranquility`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { name: data.name, corporationId: data.corporation_id };
+}
+
 export default {
     name: "자산진단",
     discord: {
@@ -298,6 +311,13 @@ export default {
                 name: "상세",
                 description:
                     "이미 검증된 앵커/토큰/스코프/자산조회 단계도 매번 자세히 보기 (기본: 한 줄로 요약)",
+                required: false,
+            },
+            {
+                type: 3, // STRING (item_id 옵션과 동일한 이유로 STRING)
+                name: "캐릭터",
+                description:
+                    "이 characterId로 조회(환경변수 앵커 대신). 구조물 소유 콥과 콥행어 소유 콥이 다를 때 사용",
                 required: false,
             },
         ],
@@ -329,6 +349,7 @@ export default {
             행어: hangarFilter,
             구조물: structureIdOpt,
             상세: detailed,
+            캐릭터: characterIdOpt,
         } = parseArgs(envelope?.args);
 
         // 단계별로 쌓아서, 어디서 막히든 여기까지의 결과를 그대로 회신한다.
@@ -345,20 +366,43 @@ export default {
             },
         });
 
-        // ── 1단계: 앵커(콥 관리자) 캐릭터 확인 ──────────────────
-        const anchors = parseAnchorCharIds(process.env.EVE_ANCHOR_CHARIDS);
-        if (anchors.length === 0) {
-            return fail("1. 앵커 확인", "EVE_ANCHOR_CHARIDS 환경변수가 비어있습니다.");
+        // ── 1단계: 캐릭터 확인 ───────────────────────────────────
+        // 캐릭터 옵션이 있으면 그 characterId로 직접 조회한다 — 구조물을 소유한
+        // 콥과 실제로 콥행어(오피스)를 들고 있는 콥이 다를 수 있어서, env 앵커의
+        // corporationId를 그대로 쓰지 않고 공개 ESI로 소속 콥을 새로 확인한다.
+        let corporationId, characterId;
+        if (characterIdOpt) {
+            const charInfo = await fetchCharacterPublicInfo(characterIdOpt);
+            if (!charInfo) {
+                return fail(
+                    "1. 캐릭터 확인",
+                    `characterId=${characterIdOpt} 공개 조회 실패 — ID를 확인하세요.`
+                );
+            }
+            characterId = BigInt(characterIdOpt);
+            corporationId = charInfo.corporationId;
+            steps.push({
+                name: "1단계 · 캐릭터(수동 지정)",
+                value: truncate(
+                    `characterId=${characterId}\ncharacterName=${charInfo.name}\ncorporationId=${corporationId} (공개 ESI로 확인)`
+                ),
+                inline: false,
+            });
+        } else {
+            const anchors = parseAnchorCharIds(process.env.EVE_ANCHOR_CHARIDS);
+            if (anchors.length === 0) {
+                return fail("1. 앵커 확인", "EVE_ANCHOR_CHARIDS 환경변수가 비어있습니다.");
+            }
+            ({ corporationId, characterId } = anchors[0]);
+            steps.push({
+                name: "1단계 · 앵커 캐릭터",
+                value: truncate(
+                    `characterId=${characterId}\ncorporationId=${corporationId}` +
+                        (anchors.length > 1 ? `\n(총 ${anchors.length}개 중 첫 번째만 사용)` : "")
+                ),
+                inline: false,
+            });
         }
-        const { corporationId, characterId } = anchors[0];
-        steps.push({
-            name: "1단계 · 앵커 캐릭터",
-            value: truncate(
-                `characterId=${characterId}\ncorporationId=${corporationId}` +
-                    (anchors.length > 1 ? `\n(총 ${anchors.length}개 중 첫 번째만 사용)` : "")
-            ),
-            inline: false,
-        });
 
         // ── 2단계: 토큰 확보 ────────────────────────────────────
         const accessToken = await getAccessTokenForCharacter(prisma, characterId, { log });
@@ -456,36 +500,6 @@ export default {
             inline: false,
         });
 
-        // ── 행어·오피스 계열 전수 검색 ───────────────────────────
-        // ESI 공식 문서 기준 콥 행어는 "구조물 → OfficeFolder(오피스) → CorpSAG1~7
-        // → 아이템" 순으로 한 단계 더 감싸져 있다. CorpSAG/OfficeFolder뿐 아니라
-        // Impounded(압류)·AssetSafety(자산 보호소)처럼 콥이 넣어둔 물건이 다른
-        // flag로 나타나는 경우도 있어서 HANGAR_ADJACENT_FLAGS 전체로 찾는다.
-        // 분포 요약의 상위 12는 건수가 적으면 거기 밀려 안 보일 수 있으니, 필터·
-        // 드릴다운과 무관하게 전체 자산에서 직접 찾아 하나도 빠짐없이 보여준다.
-        const officeAndHangarAssets = assets.filter((a) => isHangarAdjacentFlag(a.location_flag));
-        const officeFlagCounts = {};
-        for (const a of officeAndHangarAssets) {
-            officeFlagCounts[a.location_flag] = (officeFlagCounts[a.location_flag] ?? 0) + 1;
-        }
-        const officeSummaryLine =
-            Object.entries(officeFlagCounts)
-                .map(([flag, count]) => `${labelFlag(flag, hangarNames)}: ${count}건`)
-                .join(", ") || "0건";
-        const officeLines =
-            officeAndHangarAssets
-                .map(
-                    (a) =>
-                        `${labelFlag(a.location_flag, hangarNames)} · item_id=${a.item_id} · location_id=${a.location_id} · type_id=${a.type_id} · 수량${a.quantity}`
-                )
-                .join("\n") ||
-            "(전체 자산 중 행어·오피스 계열 flag 항목 0건 — 이 콥 자산엔 오피스 체인 자체가 없음)";
-        steps.push({
-            name: `행어·오피스 계열 전수 검색 (전체 ${assets.length}건 중 ${officeAndHangarAssets.length}건)`,
-            value: truncate(`요약: ${officeSummaryLine}\n${officeLines}`),
-            inline: false,
-        });
-
         // ── (구조물:전체) 후보 전체 스캔 모드 ────────────────────
         // 구조물 하나씩 손으로 넣어가며 드릴다운하는 대신, 후보 전부를 한 번에
         // 훑어서 어디에 뭐가 얼마나 있는지 표로 보여준다.
@@ -551,6 +565,39 @@ export default {
             filtered = filtered.filter((a) => a.location_flag === hangarFilter);
         }
 
+        const filterNote =
+            [structureIdOpt && `구조물:${structureIdOpt}`, hangarFilter && `행어:${hangarFilter}`]
+                .filter(Boolean)
+                .join(", ") || "없음";
+
+        // ── 행어·오피스 계열 전수 검색 ───────────────────────────
+        // CorpSAG/OfficeFolder뿐 아니라 Impounded(압류)·AssetSafety(자산 보호소)
+        // 처럼 콥이 넣어둔 물건이 다른 flag로 나타나는 경우도 있어서
+        // HANGAR_ADJACENT_FLAGS 전체로 찾는다. 분포 요약의 상위 12는 건수가
+        // 적으면 거기 밀려 안 보일 수 있어서 직접 찾아 하나도 빠짐없이 보여준다.
+        // filtered 기준이라 구조물/행어 필터를 걸면 그 범위 안에서만 검색한다.
+        const officeAndHangarAssets = filtered.filter((a) => isHangarAdjacentFlag(a.location_flag));
+        const officeFlagCounts = {};
+        for (const a of officeAndHangarAssets) {
+            officeFlagCounts[a.location_flag] = (officeFlagCounts[a.location_flag] ?? 0) + 1;
+        }
+        const officeSummaryLine =
+            Object.entries(officeFlagCounts)
+                .map(([flag, count]) => `${labelFlag(flag, hangarNames)}: ${count}건`)
+                .join(", ") || "0건";
+        const officeLines =
+            officeAndHangarAssets
+                .map(
+                    (a) =>
+                        `${labelFlag(a.location_flag, hangarNames)} · item_id=${a.item_id} · location_id=${a.location_id} · type_id=${a.type_id} · 수량${a.quantity}`
+                )
+                .join("\n") || "(행어·오피스 계열 flag 항목 0건)";
+        steps.push({
+            name: `행어·오피스 계열 전수 검색 (필터: ${filterNote} · ${filtered.length}건 중 ${officeAndHangarAssets.length}건)`,
+            value: truncate(`요약: ${officeSummaryLine}\n${officeLines}`),
+            inline: false,
+        });
+
         const byFlag = {};
         const byType = {};
         let singletonCount = 0;
@@ -576,11 +623,6 @@ export default {
             .filter(([k]) => k.startsWith("CorpSAG"))
             .reduce((sum, [, v]) => sum + v, 0);
 
-        const filterNote =
-            [structureIdOpt && `구조물:${structureIdOpt}`, hangarFilter && `행어:${hangarFilter}`]
-                .filter(Boolean)
-                .join(", ") || "없음";
-
         const depthNote = nestedInfo
             ? `\n깊이별 건수(1단계부터): ${nestedInfo.depthCounts.join(", ") || "0"} (최대 ${nestedInfo.maxDepthReached}단계까지 탐색)`
             : "";
@@ -605,108 +647,75 @@ export default {
             inline: false,
         });
 
-        // ── 8단계: 구조물(건물) 후보 목록 ───────────────────────
-        // 필터와 무관하게 항상 전체 assets 기준으로 찾는다 — "다음에 뭘 구조물 옵션으로
-        // 넣어야 하는지" 알려주는 안내 단계라서다.
-        const structureCandidates = findStructureCandidates(assets);
-        const [structureNames, structureTypeInfo] = await Promise.all([
-            structureCandidates.length > 0
-                ? fetchAssetNames(
-                      corporationId,
-                      accessToken,
-                      structureCandidates.map((a) => a.item_id)
-                  )
-                : Promise.resolve({}),
-            fetchTypeInfoBatch(structureCandidates.map((a) => a.type_id)),
-        ]);
-        const structureLines =
-            structureCandidates
-                .map((a) => {
-                    const customName = structureNames[String(a.item_id)];
-                    const info = structureTypeInfo[a.type_id];
-                    const typeLabel = info?.name ?? `type_id=${a.type_id}`;
-                    const refineryNote = info?.groupId === REFINERY_GROUP_ID ? " ⚠️Refinery" : "";
-                    return `${a.item_id} · ${typeLabel}${refineryNote}${customName ? ` · ${customName}` : ""}`;
-                })
-                .join("\n") || "(location_type=solar_system 인 항목 없음)";
+        // ── 8·9단계: 구조물 후보 / 성계 전체 (구조물 필터 없을 때만) ─────
+        // 이미 특정 구조물 하나로 드릴다운한 상태(구조물:<id>)면 "다른 후보가
+        // 뭐가 있는지", "성계 안에 또 뭐가 있는지"는 더 이상 궁금한 정보가
+        // 아니다 — 필터 없이 전체를 볼 때(서베이 모드)만 보여준다.
+        if (!structureIdOpt) {
+            const structureCandidates = findStructureCandidates(assets);
+            const [structureNames, structureTypeInfo] = await Promise.all([
+                structureCandidates.length > 0
+                    ? fetchAssetNames(
+                          corporationId,
+                          accessToken,
+                          structureCandidates.map((a) => a.item_id)
+                      )
+                    : Promise.resolve({}),
+                fetchTypeInfoBatch(structureCandidates.map((a) => a.type_id)),
+            ]);
+            const structureLines =
+                structureCandidates
+                    .map((a) => {
+                        const customName = structureNames[String(a.item_id)];
+                        const info = structureTypeInfo[a.type_id];
+                        const typeLabel = info?.name ?? `type_id=${a.type_id}`;
+                        const refineryNote =
+                            info?.groupId === REFINERY_GROUP_ID ? " ⚠️Refinery" : "";
+                        return `${a.item_id} · ${typeLabel}${refineryNote}${customName ? ` · ${customName}` : ""}`;
+                    })
+                    .join("\n") || "(location_type=solar_system 인 항목 없음)";
 
-        steps.push({
-            name: `8단계 · 구조물 후보 (${structureCandidates.length}개)`,
-            value: truncate(structureLines),
-            inline: false,
-        });
+            steps.push({
+                name: `8단계 · 구조물 후보 (${structureCandidates.length}개)`,
+                value: truncate(structureLines),
+                inline: false,
+            });
 
-        // ── 9단계: 성계 내 solar_system 자산 전체(제외 필터 미적용) ──────
-        // 8단계는 POCO/POS타워/Refinery 등 콥 행어가 없다고 판단한 걸 미리 뺀
-        // 목록이다. 그 판단이 틀렸거나 놓친 종류가 있을 수 있으니, 필터 없이
-        // location_type=solar_system 인 전체 자산을 실제 anchored된 성계
-        // (location_id)별·type_id별로 집계해서 있는 그대로 보여준다.
-        const allSystemAssets = assets.filter((a) => a.location_type === "solar_system");
-        const allSystemTypeInfo = await fetchTypeInfoBatch(allSystemAssets.map((a) => a.type_id));
-        const bySystem = {};
-        for (const a of allSystemAssets) {
-            const sysId = String(a.location_id);
-            (bySystem[sysId] ??= []).push(a);
+            // 8단계는 POCO/POS타워/Refinery 등 콥 행어가 없다고 판단한 걸 미리 뺀
+            // 목록이다. 그 판단이 틀렸거나 놓친 종류가 있을 수 있으니, 필터 없이
+            // location_type=solar_system 인 전체 자산을 실제 anchored된 성계
+            // (location_id)별·type_id별로 집계해서 있는 그대로 보여준다.
+            const allSystemAssets = assets.filter((a) => a.location_type === "solar_system");
+            const allSystemTypeInfo = await fetchTypeInfoBatch(
+                allSystemAssets.map((a) => a.type_id)
+            );
+            const bySystem = {};
+            for (const a of allSystemAssets) {
+                const sysId = String(a.location_id);
+                (bySystem[sysId] ??= []).push(a);
+            }
+            const systemLines =
+                Object.entries(bySystem)
+                    .map(([sysId, items]) => {
+                        const byTypeCount = {};
+                        for (const a of items) {
+                            const label =
+                                allSystemTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
+                            byTypeCount[label] = (byTypeCount[label] ?? 0) + 1;
+                        }
+                        const typeSummary = Object.entries(byTypeCount)
+                            .map(([label, count]) => `${label} x${count}`)
+                            .join(", ");
+                        return `성계 location_id=${sysId} · 총 ${items.length}건\n  ${typeSummary}`;
+                    })
+                    .join("\n") || "(없음)";
+
+            steps.push({
+                name: `9단계 · 성계별 solar_system 자산 전체 (${allSystemAssets.length}건, 제외 필터 미적용)`,
+                value: truncate(systemLines),
+                inline: false,
+            });
         }
-        const systemLines =
-            Object.entries(bySystem)
-                .map(([sysId, items]) => {
-                    const byTypeCount = {};
-                    for (const a of items) {
-                        const label = allSystemTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
-                        byTypeCount[label] = (byTypeCount[label] ?? 0) + 1;
-                    }
-                    const typeSummary = Object.entries(byTypeCount)
-                        .map(([label, count]) => `${label} x${count}`)
-                        .join(", ");
-                    return `성계 location_id=${sysId} · 총 ${items.length}건\n  ${typeSummary}`;
-                })
-                .join("\n") || "(없음)";
-
-        steps.push({
-            name: `9단계 · 성계별 solar_system 자산 전체 (${allSystemAssets.length}건, 제외 필터 미적용)`,
-            value: truncate(systemLines),
-            inline: false,
-        });
-
-        // ── 10단계: Cargo/SecondaryStorage 내용물 확인 ──────────────
-        // 공식 스펙엔 Cargo/SecondaryStorage 각각이 정확히 뭘 뜻하는지 설명이
-        // 없다. 콥 행어 카테고리(드론/모듈/탄약/차지&스크립트/PI/마약/필라/
-        // 학습지 등)와 겹치는 아이템인지, 실제 이름을 까서 직접 비교해본다.
-        const cargoLikeAssets = assets.filter(
-            (a) => a.location_flag === "Cargo" || a.location_flag === "SecondaryStorage"
-        );
-        const cargoLikeTypeInfo = await fetchTypeInfoBatch(cargoLikeAssets.map((a) => a.type_id));
-        // location_id(구조물)별로 나열하면 관제타워 스트론튬처럼 "같은 아이템이
-        // 구조물마다 1개씩"인 경우 줄만 잔뜩 늘어나 중략에 밀려 정작 필요한
-        // 정보가 안 보인다. (flag, 아이템 이름)으로 묶어 총 개수 + 흩어진
-        // 구조물 수만 압축해서 보여준다.
-        const byFlagThenName = {};
-        for (const a of cargoLikeAssets) {
-            const byName = (byFlagThenName[a.location_flag] ??= {});
-            const name = cargoLikeTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
-            const entry = (byName[name] ??= { count: 0, locationIds: new Set() });
-            entry.count += 1;
-            entry.locationIds.add(String(a.location_id));
-        }
-        const cargoLines =
-            Object.entries(byFlagThenName)
-                .map(([flag, byName]) => {
-                    const nameLines = Object.entries(byName)
-                        .map(
-                            ([name, { count, locationIds }]) =>
-                                `  ${name} x${count} (구조물 ${locationIds.size}곳)`
-                        )
-                        .join("\n");
-                    return `${flag}:\n${nameLines}`;
-                })
-                .join("\n") || "(없음)";
-
-        steps.push({
-            name: `10단계 · Cargo/SecondaryStorage 내용물 (${cargoLikeAssets.length}건)`,
-            value: truncate(cargoLines),
-            inline: false,
-        });
 
         return {
             ok: true,
@@ -715,7 +724,7 @@ export default {
                 title: "ESI 자산 진단",
                 description: `corporation_id=${corporationId} · characterId=${characterId}`,
                 fields: steps,
-                footer: "예: /자산진단 구조물:1038625987360 행어:CorpSAG1 — 7단계 후보의 item_id를 구조물에 넣으면 그 안쪽만 봅니다.",
+                footer: "예: /자산진단 구조물:1038625987360 행어:CorpSAG1 — 8단계 후보의 item_id를 구조물에 넣으면 그 안쪽만 봅니다. 구조물 소유 콥과 콥행어 소유 콥이 다르면 캐릭터 옵션 사용.",
                 color: 0xe8a33d,
                 ephemeralReply: true,
             },
