@@ -227,21 +227,32 @@ function labelFlag(flag, hangarNames) {
     return name ? `${flag}(${name})` : flag;
 }
 
+// ESI 문서상 /assets/names/ 는 한 번에 최대 1000개까지만 받는다. 함선까지 이름을
+// 물어보기 시작하면서 콥 하나에서 수천 건이 나올 수 있어(예: 이번에 확인한 콥은
+// 행어 계열만 2905건) 청크로 나눠 보낸다.
+const ASSET_NAMES_CHUNK_SIZE = 1000;
+
 /** POST /assets/names/ — 아이템(구조물·컨테이너·함선 등)의 커스텀 이름을 배치로 받는다. */
 async function fetchAssetNames(corporationId, accessToken, itemIds) {
     if (itemIds.length === 0) return {};
-    const res = await fetch(
-        `${ESI_BASE}/corporations/${corporationId}/assets/names/?datasource=tranquility`,
-        {
-            method: "POST",
-            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-            body: JSON.stringify(itemIds),
-        }
-    );
-    if (!res.ok) return {};
-    const rows = await res.json();
     const byId = {};
-    for (const r of rows) byId[String(r.item_id)] = r.name;
+    for (let i = 0; i < itemIds.length; i += ASSET_NAMES_CHUNK_SIZE) {
+        const chunk = itemIds.slice(i, i + ASSET_NAMES_CHUNK_SIZE);
+        const res = await fetch(
+            `${ESI_BASE}/corporations/${corporationId}/assets/names/?datasource=tranquility`,
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(chunk),
+            }
+        );
+        if (!res.ok) continue;
+        const rows = await res.json();
+        for (const r of rows) byId[String(r.item_id)] = r.name;
+    }
     return byId;
 }
 
@@ -593,7 +604,21 @@ export default {
         // HANGAR_ADJACENT_FLAGS 전체로 찾는다. 분포 요약의 상위 12는 건수가
         // 적으면 거기 밀려 안 보일 수 있어서 직접 찾아 하나도 빠짐없이 보여준다.
         // filtered 기준이라 구조물/행어 필터를 걸면 그 범위 안에서만 검색한다.
+        //
+        // 함선은 타입 이름(예: Praxis)과 실제로 붙인 커스텀 이름(독트린 역할
+        // 구분용)이 다를 수 있다 — 둘 다 보여줘야 재고 스키마에 커스텀 이름
+        // 필드가 필요한지 판단할 수 있다.
         const officeAndHangarAssets = filtered.filter((a) => isHangarAdjacentFlag(a.location_flag));
+        const [officeTypeInfo, officeCustomNames] = await Promise.all([
+            fetchTypeInfoBatch(officeAndHangarAssets.map((a) => a.type_id)),
+            officeAndHangarAssets.length > 0
+                ? fetchAssetNames(
+                      corporationId,
+                      accessToken,
+                      officeAndHangarAssets.map((a) => a.item_id)
+                  )
+                : Promise.resolve({}),
+        ]);
         const officeFlagCounts = {};
         for (const a of officeAndHangarAssets) {
             officeFlagCounts[a.location_flag] = (officeFlagCounts[a.location_flag] ?? 0) + 1;
@@ -604,10 +629,15 @@ export default {
                 .join(", ") || "0건";
         const officeLines =
             officeAndHangarAssets
-                .map(
-                    (a) =>
-                        `${labelFlag(a.location_flag, hangarNames)} · item_id=${a.item_id} · location_id=${a.location_id} · type_id=${a.type_id} · 수량${a.quantity}`
-                )
+                .map((a) => {
+                    const typeName = officeTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
+                    const customName = officeCustomNames[String(a.item_id)];
+                    const nameLabel =
+                        customName && customName !== typeName
+                            ? `${typeName} · 커스텀명:"${customName}"`
+                            : typeName;
+                    return `${labelFlag(a.location_flag, hangarNames)} · ${nameLabel} · item_id=${a.item_id} · location_id=${a.location_id} · 수량${a.quantity}`;
+                })
                 .join("\n") || "(행어·오피스 계열 flag 항목 0건)";
         steps.push({
             name: `행어·오피스 계열 전수 검색 (필터: ${filterNote} · ${filtered.length}건 중 ${officeAndHangarAssets.length}건)`,

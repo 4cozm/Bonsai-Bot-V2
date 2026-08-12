@@ -196,6 +196,51 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(officeScan.value).toContain("CorpSAG1");
     });
 
+    test("함선처럼 커스텀 이름이 붙은 아이템은 타입 이름과 커스텀 이름을 같이 보여준다", async () => {
+        const SHIP_ITEM_ID = 777000111;
+        const assets = [
+            ...buildNestedAssets(),
+            {
+                item_id: SHIP_ITEM_ID,
+                type_id: 47466, // Praxis
+                location_id: OFFICE_ITEM_ID,
+                location_type: "item",
+                location_flag: "CorpSAG6",
+                is_singleton: true,
+                quantity: 1,
+            },
+        ];
+        global.fetch = jest.fn(async (url) => {
+            const u = String(url);
+            if (u.includes("/assets/?")) {
+                return { ok: true, headers: { get: () => "1" }, json: async () => assets };
+            }
+            if (u.includes("/divisions/")) {
+                return { ok: true, json: async () => ({ hangar: [] }) };
+            }
+            if (u.includes("/assets/names/")) {
+                return {
+                    ok: true,
+                    json: async () => [{ item_id: SHIP_ITEM_ID, name: "Praxis - Shield RR" }],
+                };
+            }
+            if (u.includes("/universe/types/")) {
+                return { ok: true, json: async () => ({ name: "Praxis", group_id: 513 }) };
+            }
+            return { ok: false, status: 404, text: async () => "" };
+        });
+        const ctx = { prisma: {} };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        expect(officeScan.value).toContain(`Praxis · 커스텀명:"Praxis - Shield RR"`);
+    });
+
     test("Impounded/AssetSafety 처럼 CorpSAG가 아닌 행어 인접 flag도 잡아낸다", async () => {
         const impoundedAssets = [
             {
