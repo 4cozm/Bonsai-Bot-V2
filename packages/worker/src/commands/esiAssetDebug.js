@@ -1,18 +1,16 @@
 // packages/worker/src/commands/esiAssetDebug.js
-import { getAccessTokenForCharacter, logger } from "@bonsai/shared";
+import { getAccessTokenForCharacter, logger, parseAnchorCharIds } from "@bonsai/shared";
 
 const log = logger();
 
 const ESI_BASE = "https://esi.evetech.net/latest";
+const REQUIRED_SCOPE = "esi-assets.read_corporation_assets.v1";
+const FIELD_MAX = 950; // Discord 임베드 필드 실제 한도(1024)보다 여유를 둔다
 
-// 임시 진단 명령이라 하드코딩. 재고 시스템 정식 기능(스키마 설계 참고)이 붙으면
+// 임시 진단 명령이라 하드코딩. 재고 시스템 정식 기능이 붙으면
 // 테넌트별 관리자 배열(환경변수/Key Vault)로 옮기고 이 파일은 지운다.
 const ALLOWED_DISCORD_IDS = new Set(["378543198953406464"]);
 
-/**
- * 콤마/공백 없이 순수 숫자 문자열인지 — location_flag 필터로 온 값이 아니라
- * 진짜 콤마 구분 flag 목록인지 정도만 가볍게 검증할 때 재사용.
- */
 function parseArgs(rawArgs) {
     try {
         const obj = JSON.parse(String(rawArgs ?? "").trim() || "{}");
@@ -22,12 +20,42 @@ function parseArgs(rawArgs) {
     }
 }
 
+/** 중략 처리 — 끝까지 다 못 보여줄 땐 잘렸다는 걸 명시적으로 남긴다(조용히 자르지 않는다). */
+function truncate(text, max = FIELD_MAX) {
+    const s = String(text ?? "");
+    if (s.length <= max) return s;
+    return s.slice(0, max - 20) + `\n…(중략, 전체 ${s.length}자)`;
+}
+
+/**
+ * accessToken(JWT)의 scp 클레임을 읽어 부여된 스코프 목록을 반환한다.
+ * 서명 검증은 하지 않는다 — 우리 DB에 저장된 토큰이라 신뢰 경계가 아니라
+ * "이 토큰에 실제로 무슨 스코프가 실려 있나"만 보는 용도다.
+ *
+ * .env 의 EVE_ESI_SCOPE 요청 목록에 있다고 해서 이 토큰이 그 스코프를 실제로
+ * 들고 있다는 보장은 없다 — 스코프 목록에 추가되기 전에 이미 동의한 토큰이면
+ * 재동의 전까지 새 스코프가 없다. 그래서 목록이 아니라 토큰 자체를 깐다.
+ */
+function decodeJwtScopes(accessToken) {
+    try {
+        const parts = String(accessToken ?? "").split(".");
+        if (parts.length !== 3) return null;
+        let b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const pad = b64.length % 4;
+        if (pad) b64 += "=".repeat(4 - pad);
+        const payload = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
+        const scp = payload?.scp;
+        if (scp == null) return [];
+        return Array.isArray(scp) ? scp : [scp];
+    } catch {
+        return null; // 디코딩 실패 — 스코프 확인 불가로 표시하고 자산 호출은 그래도 시도한다
+    }
+}
+
 /**
  * 콥 자산을 페이지네이션 끝까지 받는다. ESI 는 station/system 단위 서버측 필터를
- * 제공하지 않는다(공식 스펙에 query 파라미터가 page 하나뿐 — 확인함) — 그래서 항상
- * 전체를 받아 이후 단계에서 클라이언트 측으로 걸러야 한다.
- *
- * @returns {Promise<{ok: true, assets: any[]} | {ok: false, status: number, body: string}>}
+ * 제공하지 않는다(공식 스펙 확인 — query 파라미터가 page 하나뿐) — 전체를 받아
+ * 클라이언트 측으로 걸러야 한다.
  */
 async function fetchAllCorpAssets(corporationId, accessToken) {
     const assets = [];
@@ -56,15 +84,9 @@ export default {
     name: "자산진단",
     discord: {
         name: "자산진단",
-        description: "[임시/관리자 전용] ESI 콥 자산 응답 구조 확인용 디버그 명령",
+        description: "[임시/관리자 전용] ESI 콥 자산 응답 구조를 단계별로 확인",
         type: 1,
         options: [
-            {
-                type: 3, // STRING
-                name: "캐릭터",
-                description: "사용할 연동 캐릭터명 (생략 시 메인 캐릭터, Director 권한 필요)",
-                required: false,
-            },
             {
                 type: 3, // STRING
                 name: "행어",
@@ -96,78 +118,100 @@ export default {
             return { ok: false, data: { error: "시스템 설정 오류", ephemeralReply: true } };
         }
 
-        const { 캐릭터: charNameOpt, 행어: hangarFilter } = parseArgs(envelope?.args);
+        const { 행어: hangarFilter } = parseArgs(envelope?.args);
 
-        const charRow = charNameOpt
-            ? await prisma.eveCharacter.findFirst({
-                  where: { discordUserId, characterName: String(charNameOpt) },
-              })
-            : await prisma.eveCharacter.findFirst({
-                  where: { discordUserId },
-                  orderBy: [{ isMain: "desc" }],
-              });
+        // 단계별로 쌓아서, 어디서 막히든 여기까지의 결과를 그대로 회신한다.
+        const steps = [];
+        const fail = (title, message) => ({
+            ok: false,
+            data: {
+                embed: true,
+                title: "ESI 자산 진단 — 실패",
+                description: `**${title}** 단계에서 멈췄습니다: ${message}`,
+                fields: steps,
+                color: 0xe05b4f,
+                ephemeralReply: true,
+            },
+        });
 
-        if (!charRow) {
-            return {
-                ok: false,
-                data: {
-                    error: charNameOpt
-                        ? `연동된 캐릭터 중 "${charNameOpt}"를 찾지 못했습니다.`
-                        : "연동된 캐릭터가 없습니다. /캐릭터목록 으로 확인하세요.",
-                    ephemeralReply: true,
-                },
-            };
+        // ── 1단계: 앵커(콥 관리자) 캐릭터 확인 ──────────────────
+        const anchors = parseAnchorCharIds(process.env.EVE_ANCHOR_CHARIDS);
+        if (anchors.length === 0) {
+            return fail("1. 앵커 확인", "EVE_ANCHOR_CHARIDS 환경변수가 비어있습니다.");
         }
+        const { corporationId, characterId } = anchors[0];
+        steps.push({
+            name: "1단계 · 앵커 캐릭터",
+            value: truncate(
+                `characterId=${characterId}\ncorporationId=${corporationId}` +
+                    (anchors.length > 1 ? `\n(총 ${anchors.length}개 중 첫 번째만 사용)` : "")
+            ),
+            inline: false,
+        });
 
-        const accessToken = await getAccessTokenForCharacter(prisma, charRow.characterId, { log });
+        // ── 2단계: 토큰 확보 ────────────────────────────────────
+        const accessToken = await getAccessTokenForCharacter(prisma, characterId, { log });
         if (!accessToken) {
-            return {
-                ok: false,
-                data: {
-                    error: `${charRow.characterName} 의 ESI 토큰을 가져오지 못했습니다(만료/미등록).`,
-                    ephemeralReply: true,
-                },
-            };
+            steps.push({ name: "2단계 · 토큰", value: "❌ 확보 실패(만료/미등록)", inline: false });
+            return fail("2. 토큰 확보", "getAccessTokenForCharacter 가 null을 반환했습니다.");
+        }
+        steps.push({ name: "2단계 · 토큰", value: "✅ 확보 성공", inline: false });
+
+        // ── 3단계: 스코프 확인 ──────────────────────────────────
+        const scopes = decodeJwtScopes(accessToken);
+        if (scopes == null) {
+            steps.push({
+                name: "3단계 · 스코프 확인",
+                value: "⚠️ JWT 디코딩 실패 — 확인 불가, 4단계는 시도함",
+                inline: false,
+            });
+        } else {
+            const hasScope = scopes.includes(REQUIRED_SCOPE);
+            steps.push({
+                name: "3단계 · 스코프 확인",
+                value: truncate(
+                    `${hasScope ? "✅" : "❌"} ${REQUIRED_SCOPE}\n` +
+                        `보유 스코프 ${scopes.length}개:\n` +
+                        scopes.join(", ")
+                ),
+                inline: false,
+            });
+            if (!hasScope) {
+                return fail(
+                    "3. 스코프 확인",
+                    `이 토큰에 ${REQUIRED_SCOPE} 가 없습니다. 이 캐릭터가 마지막으로 동의한 시점 이후 스코프 목록에 추가됐다면 재동의(재로그인)가 필요합니다.`
+                );
+            }
         }
 
-        // corporation_id — 공개 엔드포인트(인증 불필요), 캐릭터 정보에서 얻는다.
-        const charInfoRes = await fetch(
-            `${ESI_BASE}/characters/${charRow.characterId}/?datasource=tranquility`
-        );
-        if (!charInfoRes.ok) {
-            return {
-                ok: false,
-                data: {
-                    error: `캐릭터 공개정보 조회 실패 (${charInfoRes.status})`,
-                    ephemeralReply: true,
-                },
-            };
-        }
-        const charInfo = await charInfoRes.json();
-        const corporationId = charInfo.corporation_id;
-
+        // ── 4단계: 콥 자산 조회 ─────────────────────────────────
         const result = await fetchAllCorpAssets(corporationId, accessToken);
         if (!result.ok) {
-            // x-required-roles: ["Director"] — 콥 자산 조회는 Director 권한이 있어야 한다.
-            // 403 이 뜨면 거의 이 문제다.
-            return {
-                ok: false,
-                data: {
-                    error: `ESI 자산 조회 실패 (${result.status}). Director 권한이 있는 캐릭터인지 확인하세요.\n${result.body}`,
-                    ephemeralReply: true,
-                },
-            };
+            // 스코프는 있는데 403이면 거의 Director 권한 문제다(x-required-roles: ["Director"]).
+            steps.push({
+                name: "4단계 · 자산 조회",
+                value: truncate(`❌ HTTP ${result.status}\n${result.body}`),
+                inline: false,
+            });
+            return fail(
+                "4. 콥 자산 조회",
+                `HTTP ${result.status}. 이 캐릭터가 콥에서 Director 권한을 가지고 있는지 확인하세요(콥 자산 조회는 Director 필수).`
+            );
         }
-
         const { assets, totalPages } = result;
+        steps.push({
+            name: "4단계 · 자산 조회",
+            value: `✅ ${assets.length}건 (페이지 ${totalPages}개)`,
+            inline: false,
+        });
 
-        // 서버 로그에 원본 전체를 남긴다 — Discord 임베드는 필드당 1024자 제한이라
-        // 요약만 보내고, 실제 구조 확인은 워커 로그(pm2 logs)에서 한다.
+        // 원본 전체는 워커 로그에 — Discord 임베드로는 다 못 보낸다.
         log.info(
-            `[cmd:자산진단] 원본 dump corporationId=${corporationId} character=${charRow.characterName} count=${assets.length} pages=${totalPages}`,
+            `[cmd:자산진단] 원본 dump corporationId=${corporationId} count=${assets.length} pages=${totalPages}`,
             { assets }
         );
 
+        // ── 5단계: 분포 요약 ────────────────────────────────────
         const filtered = hangarFilter
             ? assets.filter((a) => a.location_flag === hangarFilter)
             : assets;
@@ -180,7 +224,6 @@ export default {
             byType[a.location_type] = (byType[a.location_type] ?? 0) + 1;
             if (a.is_singleton) singletonCount += 1;
         }
-
         const topFlags =
             Object.entries(byFlag)
                 .sort((a, b) => b[1] - a[1])
@@ -192,27 +235,31 @@ export default {
                 .map(([k, v]) => `${k}: ${v}`)
                 .join(", ") || "(없음)";
 
+        steps.push({
+            name: "5단계 · 분포 요약" + (hangarFilter ? ` (필터: ${hangarFilter})` : ""),
+            value: truncate(
+                `대상 ${filtered.length}건 · is_singleton=true ${singletonCount}건\n` +
+                    `location_type: ${typeLine}\n` +
+                    `location_flag 상위 12:\n${topFlags}`
+            ),
+            inline: false,
+        });
+
+        // ── 6단계: 샘플 원본 ────────────────────────────────────
         const sample = filtered.slice(0, 3);
-        const sampleText = JSON.stringify(sample, null, 2);
+        steps.push({
+            name: `6단계 · 샘플 (앞 ${sample.length}개, 전체는 워커 로그)`,
+            value: truncate("```json\n" + JSON.stringify(sample, null, 2) + "\n```"),
+            inline: false,
+        });
 
         return {
             ok: true,
             data: {
                 embed: true,
                 title: "ESI 자산 진단" + (hangarFilter ? ` — ${hangarFilter}` : ""),
-                description: `corporation_id=${corporationId} · 캐릭터=${charRow.characterName}`,
-                fields: [
-                    { name: "총 항목 수", value: String(filtered.length), inline: true },
-                    { name: "is_singleton=true", value: String(singletonCount), inline: true },
-                    { name: "페이지", value: String(totalPages), inline: true },
-                    { name: "location_type 분포", value: typeLine, inline: false },
-                    { name: "location_flag 분포 (상위 12)", value: topFlags, inline: false },
-                    {
-                        name: `샘플 (앞 ${sample.length}개, 전체는 워커 로그)`,
-                        value: "```json\n" + sampleText.slice(0, 950) + "\n```",
-                        inline: false,
-                    },
-                ],
+                description: `corporation_id=${corporationId} · characterId=${characterId}`,
+                fields: steps,
                 footer: "필터: /자산진단 행어:CorpSAG1 처럼 location_flag 로 좁힐 수 있습니다.",
                 color: 0xe8a33d,
                 ephemeralReply: true,
