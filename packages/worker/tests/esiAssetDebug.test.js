@@ -82,7 +82,11 @@ function mockFetchSequence({ assets, divisionsOk = true, namesOk = true }) {
         if (u.includes("/assets/names/")) {
             return namesOk
                 ? { ok: true, json: async () => [{ item_id: STRUCTURE_ITEM_ID, name: "포티자" }] }
-                : { ok: false };
+                : {
+                      ok: false,
+                      status: 404,
+                      text: async () => '{"error":"Invalid IDs in the request"}',
+                  };
         }
         if (u.includes("/universe/types/")) {
             return { ok: true, json: async () => ({ name: "Fortizar", group_id: 1657 }) };
@@ -299,6 +303,69 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(officeScan.value).toContain("(ESI 이름 응답 없음)");
         expect(officeScan.value).toContain(`item_id=${DEFAULT_NAME_ITEM_ID}`);
         expect(officeScan.value).toContain("(기본값 그대로)");
+    });
+
+    test("스택형(is_singleton=false) 아이템은 이름 조회 대상에서 빠지고 타입명만 표시된다", async () => {
+        const STACK_ITEM_ID = 777000444;
+        const requestedIds = [];
+        const assets = [
+            ...buildNestedAssets(),
+            {
+                item_id: STACK_ITEM_ID,
+                type_id: 34,
+                location_id: OFFICE_ITEM_ID,
+                location_type: "item",
+                location_flag: "CorpSAG1",
+                is_singleton: false,
+                quantity: 500,
+            },
+        ];
+        global.fetch = jest.fn(async (url, init) => {
+            const u = String(url);
+            if (u.includes("/assets/?")) {
+                return { ok: true, headers: { get: () => "1" }, json: async () => assets };
+            }
+            if (u.includes("/divisions/")) {
+                return { ok: true, json: async () => ({ hangar: [] }) };
+            }
+            if (u.includes("/assets/names/")) {
+                requestedIds.push(...JSON.parse(init.body));
+                return { ok: true, json: async () => [] };
+            }
+            if (u.includes("/universe/types/")) {
+                return { ok: true, json: async () => ({ name: "트리튬", group_id: 18 }) };
+            }
+            return { ok: false, status: 404, text: async () => "" };
+        });
+        const ctx = { prisma: {} };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        // /assets/names/ 요청에 스택형 아이템의 item_id가 섞이면 안 된다 —
+        // 섞이면 청크 전체가 404로 실패한다(실측으로 확인된 ESI 동작).
+        expect(requestedIds).not.toContain(STACK_ITEM_ID);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        expect(officeScan.value).toContain(`item_id=${STACK_ITEM_ID}`);
+        expect(officeScan.value).not.toContain(`item_id=${STACK_ITEM_ID} (ESI 이름 응답 없음)`);
+    });
+
+    test("assets/names/ 청크가 실패하면 조용히 무시하지 않고 경고로 보여준다", async () => {
+        mockFetchSequence({ assets: buildNestedAssets(), namesOk: false });
+        const ctx = { prisma: {} };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        expect(officeScan.value).toContain("/assets/names/ 요청");
+        expect(officeScan.value).toContain("실패");
     });
 
     test("Impounded/AssetSafety 처럼 CorpSAG가 아닌 행어 인접 flag도 잡아낸다", async () => {

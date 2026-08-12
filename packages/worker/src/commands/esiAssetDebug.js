@@ -232,10 +232,20 @@ function labelFlag(flag, hangarNames) {
 // 행어 계열만 2905건) 청크로 나눠 보낸다.
 const ASSET_NAMES_CHUNK_SIZE = 1000;
 
-/** POST /assets/names/ — 아이템(구조물·컨테이너·함선 등)의 커스텀 이름을 배치로 받는다. */
+/**
+ * POST /assets/names/ — 아이템(구조물·컨테이너·함선 등)의 커스텀 이름을 배치로 받는다.
+ *
+ * 이전엔 청크 요청이 실패해도 `continue`로 조용히 넘어가서, "ESI가 이름을 안
+ * 줬다"와 "우리 요청 자체가 실패했다"를 구분할 수 없었다 — 함선 이름이 하나도
+ * 안 나온 게 진짜 정책 때문인지 요청 오류 때문인지 확인하려면 실패를 숨기면
+ * 안 된다. 그래서 실패한 청크의 상태 코드/응답 본문을 errors 에 같이 반환한다.
+ *
+ * @returns {Promise<{byId: Record<string,string>, errors: {status:number, body:string, itemCount:number}[]}>}
+ */
 async function fetchAssetNames(corporationId, accessToken, itemIds) {
-    if (itemIds.length === 0) return {};
     const byId = {};
+    const errors = [];
+    if (itemIds.length === 0) return { byId, errors };
     for (let i = 0; i < itemIds.length; i += ASSET_NAMES_CHUNK_SIZE) {
         const chunk = itemIds.slice(i, i + ASSET_NAMES_CHUNK_SIZE);
         const res = await fetch(
@@ -249,11 +259,15 @@ async function fetchAssetNames(corporationId, accessToken, itemIds) {
                 body: JSON.stringify(chunk),
             }
         );
-        if (!res.ok) continue;
+        if (!res.ok) {
+            const body = await res.text().catch(() => "");
+            errors.push({ status: res.status, body: body.slice(0, 300), itemCount: chunk.length });
+            continue;
+        }
         const rows = await res.json();
         for (const r of rows) byId[String(r.item_id)] = r.name;
     }
-    return byId;
+    return { byId, errors };
 }
 
 /**
@@ -535,16 +549,15 @@ export default {
             structureIdOpt != null && ALL_STRUCTURES_TRIGGERS.has(String(structureIdOpt).trim());
         if (isAllStructuresScan) {
             const candidates = findStructureCandidates(assets);
-            const [typeInfo, nameMap] = await Promise.all([
+            const [typeInfo, nameResult] = await Promise.all([
                 fetchTypeInfoBatch(candidates.map((c) => c.type_id)),
-                candidates.length > 0
-                    ? fetchAssetNames(
-                          corporationId,
-                          accessToken,
-                          candidates.map((c) => c.item_id)
-                      )
-                    : Promise.resolve({}),
+                fetchAssetNames(
+                    corporationId,
+                    accessToken,
+                    candidates.filter((c) => c.is_singleton).map((c) => c.item_id)
+                ),
             ]);
+            const nameMap = nameResult.byId;
 
             const lines = candidates.map((c) => {
                 const nested = collectNestedAssets(c.item_id, assets);
@@ -608,17 +621,28 @@ export default {
         // 함선은 타입 이름(예: Praxis)과 실제로 붙인 커스텀 이름(독트린 역할
         // 구분용)이 다를 수 있다 — 둘 다 보여줘야 재고 스키마에 커스텀 이름
         // 필드가 필요한지 판단할 수 있다.
+        //
+        // /assets/names/ 는 공식 스펙상 "이름 지정이 가능한 아이템(컨테이너·함선
+        // 등, is_singleton=true)"에만 유효하다 — 탄약처럼 스택형(is_singleton=
+        // false) item_id를 같은 배치에 섞으면 그 청크 전체가 404로 실패해서
+        // 진짜 함선 이름까지 같이 못 받아온다(실측으로 확인됨). 그래서 이름
+        // 조회 자체는 is_singleton=true 인 것만 추려서 보낸다.
         const officeAndHangarAssets = filtered.filter((a) => isHangarAdjacentFlag(a.location_flag));
-        const [officeTypeInfo, officeCustomNames] = await Promise.all([
+        const nameEligibleItemIds = officeAndHangarAssets
+            .filter((a) => a.is_singleton)
+            .map((a) => a.item_id);
+        const [officeTypeInfo, officeNameResult] = await Promise.all([
             fetchTypeInfoBatch(officeAndHangarAssets.map((a) => a.type_id)),
-            officeAndHangarAssets.length > 0
-                ? fetchAssetNames(
-                      corporationId,
-                      accessToken,
-                      officeAndHangarAssets.map((a) => a.item_id)
-                  )
-                : Promise.resolve({}),
+            fetchAssetNames(corporationId, accessToken, nameEligibleItemIds),
         ]);
+        const officeCustomNames = officeNameResult.byId;
+        const officeNameErrorNote =
+            officeNameResult.errors.length > 0
+                ? `\n⚠️ /assets/names/ 요청 ${officeNameResult.errors.length}개 청크 실패: ` +
+                  officeNameResult.errors
+                      .map((e) => `HTTP ${e.status}(${e.itemCount}건, ${e.body})`)
+                      .join(", ")
+                : "";
         const officeFlagCounts = {};
         for (const a of officeAndHangarAssets) {
             officeFlagCounts[a.location_flag] = (officeFlagCounts[a.location_flag] ?? 0) + 1;
@@ -631,22 +655,30 @@ export default {
             officeAndHangarAssets
                 .map((a) => {
                     const typeName = officeTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
-                    // customName이 undefined면 이 item_id에 대해 ESI가 이름 자체를 안
-                    // 준 것(응답 목록에 아예 없음)이다 — "이름이 타입명이랑 같아서
-                    // 안 보여준 것"과는 다른 상태라 구분해서 표시한다.
-                    const hasCustomEntry = Object.hasOwn(officeCustomNames, String(a.item_id));
-                    const customName = officeCustomNames[String(a.item_id)];
-                    const nameLabel = !hasCustomEntry
-                        ? `${typeName} (ESI 이름 응답 없음)`
-                        : customName === typeName
-                          ? `${typeName} (기본값 그대로)`
-                          : `${typeName} · 커스텀명:"${customName}"`;
+                    let nameLabel;
+                    if (!a.is_singleton) {
+                        // 스택형 아이템은 애초에 이름 지정 대상이 아니다(ESI 스펙상
+                        // is_singleton=true 만 유효) — "응답 없음"은 오해의 소지가
+                        // 있어 그냥 타입명만 보여준다.
+                        nameLabel = typeName;
+                    } else {
+                        // customName이 undefined면 이 item_id에 대해 ESI가 이름
+                        // 자체를 안 준 것(응답 목록에 아예 없음)이다 — "이름이
+                        // 타입명이랑 같아서 안 보여준 것"과는 다른 상태라 구분한다.
+                        const hasCustomEntry = Object.hasOwn(officeCustomNames, String(a.item_id));
+                        const customName = officeCustomNames[String(a.item_id)];
+                        nameLabel = !hasCustomEntry
+                            ? `${typeName} (ESI 이름 응답 없음)`
+                            : customName === typeName
+                              ? `${typeName} (기본값 그대로)`
+                              : `${typeName} · 커스텀명:"${customName}"`;
+                    }
                     return `${labelFlag(a.location_flag, hangarNames)} · ${nameLabel} · item_id=${a.item_id} · location_id=${a.location_id} · 수량${a.quantity}`;
                 })
                 .join("\n") || "(행어·오피스 계열 flag 항목 0건)";
         steps.push({
             name: `행어·오피스 계열 전수 검색 (필터: ${filterNote} · ${filtered.length}건 중 ${officeAndHangarAssets.length}건)`,
-            value: truncate(`요약: ${officeSummaryLine}\n${officeLines}`),
+            value: truncate(`요약: ${officeSummaryLine}${officeNameErrorNote}\n${officeLines}`),
             inline: false,
         });
 
@@ -705,16 +737,15 @@ export default {
         // 아니다 — 필터 없이 전체를 볼 때(서베이 모드)만 보여준다.
         if (!structureIdOpt) {
             const structureCandidates = findStructureCandidates(assets);
-            const [structureNames, structureTypeInfo] = await Promise.all([
-                structureCandidates.length > 0
-                    ? fetchAssetNames(
-                          corporationId,
-                          accessToken,
-                          structureCandidates.map((a) => a.item_id)
-                      )
-                    : Promise.resolve({}),
+            const [structureNameResult, structureTypeInfo] = await Promise.all([
+                fetchAssetNames(
+                    corporationId,
+                    accessToken,
+                    structureCandidates.filter((a) => a.is_singleton).map((a) => a.item_id)
+                ),
                 fetchTypeInfoBatch(structureCandidates.map((a) => a.type_id)),
             ]);
+            const structureNames = structureNameResult.byId;
             const structureLines =
                 structureCandidates
                     .map((a) => {
