@@ -628,6 +628,39 @@ export default {
             inline: false,
         });
 
+        // ── 9단계: 성계 내 solar_system 자산 전체(제외 필터 미적용) ──────
+        // 8단계는 POCO/POS타워/Refinery 등 콥 행어가 없다고 판단한 걸 미리 뺀
+        // 목록이다. 그 판단이 틀렸거나 놓친 종류가 있을 수 있으니, 필터 없이
+        // location_type=solar_system 인 전체 자산을 실제 anchored된 성계
+        // (location_id)별·type_id별로 집계해서 있는 그대로 보여준다.
+        const allSystemAssets = assets.filter((a) => a.location_type === "solar_system");
+        const allSystemTypeInfo = await fetchTypeInfoBatch(allSystemAssets.map((a) => a.type_id));
+        const bySystem = {};
+        for (const a of allSystemAssets) {
+            const sysId = String(a.location_id);
+            (bySystem[sysId] ??= []).push(a);
+        }
+        const systemLines =
+            Object.entries(bySystem)
+                .map(([sysId, items]) => {
+                    const byTypeCount = {};
+                    for (const a of items) {
+                        const label = allSystemTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
+                        byTypeCount[label] = (byTypeCount[label] ?? 0) + 1;
+                    }
+                    const typeSummary = Object.entries(byTypeCount)
+                        .map(([label, count]) => `${label} x${count}`)
+                        .join(", ");
+                    return `성계 location_id=${sysId} · 총 ${items.length}건\n  ${typeSummary}`;
+                })
+                .join("\n") || "(없음)";
+
+        steps.push({
+            name: `9단계 · 성계별 solar_system 자산 전체 (${allSystemAssets.length}건, 제외 필터 미적용)`,
+            value: truncate(systemLines),
+            inline: false,
+        });
+
         return {
             ok: true,
             data: {

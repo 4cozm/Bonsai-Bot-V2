@@ -219,4 +219,18 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(officeScan.name).toContain("0건");
         expect(officeScan.value).toContain("오피스 체인 자체가 없음");
     });
+
+    test("9단계: 제외 필터 없이 성계별 solar_system 자산 전체를 보여준다", async () => {
+        mockFetchSequence({ assets: buildNestedAssets() });
+        const ctx = { prisma: {} };
+        const envelope = { meta: { discordUserId: ALLOWED_DISCORD_ID }, args: "{}" };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const systemScan = out.data.fields.find((f) => f.name.startsWith("9단계"));
+        expect(systemScan).toBeDefined();
+        expect(systemScan.value).toContain("성계 location_id=30000142");
+        expect(systemScan.value).toContain("Fortizar x1");
+    });
 });
