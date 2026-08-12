@@ -10,6 +10,7 @@ import fuelDailyCheck from "./fuelDailyCheck.js";
 import marketPrice from "./marketPrice.js";
 import pajamaHotCheck from "./pajamaHotCheck.js";
 import ping from "./ping.js";
+import registerTrackedStructure from "./registerTrackedStructure.js";
 
 export function getCommandDefinitions() {
     return [
@@ -24,6 +25,7 @@ export function getCommandDefinitions() {
         fleetCommander,
         pajamaHotCheck,
         esiAssetDebug,
+        registerTrackedStructure,
     ];
 }
 
