@@ -1,5 +1,6 @@
 // packages/worker/src/commands/index.js
 import dev from "./dev.js";
+import esiAssetDebug from "./esiAssetDebug.js";
 import esiComplete from "./esiComplete.js";
 import esiList from "./esiList.js";
 import esiSignup from "./esiSignup.js";
@@ -22,6 +23,7 @@ export function getCommandDefinitions() {
         marketPrice,
         fleetCommander,
         pajamaHotCheck,
+        esiAssetDebug,
     ];
 }
 
