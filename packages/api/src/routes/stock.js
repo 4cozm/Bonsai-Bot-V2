@@ -6,8 +6,12 @@
 import express from "express";
 import { getPrisma } from "@bonsai/shared/db";
 import { requireSession } from "../auth/session.js";
+import { computeBurnRatePerDay, computeDaysLeft } from "../stock/burnRate.js";
 
-const RECENT_HISTORY_HOURS = 25; // 스파크라인 24건 + 여유 1시간(크론 밀림 대비)
+// daysLeft 계산에 30일치가 필요해서(burnRate.js), 목록 조회 자체를 그 창으로
+// 가져온다 — 스파크라인(최근 24건)은 이미 받아온 이 데이터의 꼬리만 잘라 쓰면
+// 되니 쿼리를 두 번 안 날려도 된다.
+const BURN_WINDOW_DAYS = 30;
 const RECENT_HISTORY_POINTS = 24;
 const DEFAULT_HISTORY_DAYS = 90;
 const MAX_HISTORY_DAYS = 365;
@@ -63,7 +67,7 @@ export function createStockRouter() {
             return res.status(404).json({ ok: false, error: "구조물을 찾을 수 없습니다." });
         }
 
-        const since = new Date(Date.now() - RECENT_HISTORY_HOURS * 60 * 60 * 1000);
+        const since = new Date(Date.now() - BURN_WINDOW_DAYS * 24 * 60 * 60 * 1000);
         const [logs, targets] = await Promise.all([
             prisma.stockLog.findMany({
                 where: { structureId, sampledAt: { gte: since } },
@@ -82,16 +86,17 @@ export function createStockRouter() {
 
         let latestSampledAt = null;
         const items = [...byType.entries()].map(([typeId, rows]) => {
-            const recent = rows.slice(-RECENT_HISTORY_POINTS);
-            const last = recent[recent.length - 1];
+            const last = rows[rows.length - 1];
             if (!latestSampledAt || last.sampledAt > latestSampledAt) {
                 latestSampledAt = last.sampledAt;
             }
+            const burnRatePerDay = computeBurnRatePerDay(rows, BURN_WINDOW_DAYS);
             return {
                 typeId,
                 stocked: last.quantity,
                 target: targetByType.get(typeId) ?? null,
-                recentHistory: recent.map(toQuantityPoint),
+                daysLeft: computeDaysLeft(last.quantity, burnRatePerDay),
+                recentHistory: rows.slice(-RECENT_HISTORY_POINTS).map(toQuantityPoint),
             };
         });
 

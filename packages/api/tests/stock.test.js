@@ -142,6 +142,8 @@ describe("api/routes/stock", () => {
                 const item100 = body.items.find((i) => i.typeId === 100);
                 expect(item100.stocked).toBe(8);
                 expect(item100.target).toBe(20);
+                // 5 → 8 은 감소가 아니라 보급이라 소비 속도가 없다 — daysLeft는 null.
+                expect(item100.daysLeft).toBeNull();
                 expect(item100.recentHistory).toEqual([
                     { sampledAt: t1.toISOString(), quantity: 5 },
                     { sampledAt: t2.toISOString(), quantity: 8 },
@@ -150,6 +152,39 @@ describe("api/routes/stock", () => {
                 const item200 = body.items.find((i) => i.typeId === 200);
                 expect(item200.stocked).toBe(3);
                 expect(item200.target).toBeNull();
+                expect(item200.daysLeft).toBeNull();
+            } finally {
+                server.close();
+            }
+        });
+
+        test("실제로 감소 추세면 daysLeft가 계산돼서 나온다", async () => {
+            const structureId = 1051025995560n;
+            const findUnique = jest
+                .fn()
+                .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
+            const dayMs = 24 * 60 * 60 * 1000;
+            const now = Date.now();
+            const stockLogFindMany = jest.fn().mockResolvedValue([
+                { typeId: 300, quantity: 100, sampledAt: new Date(now - 4 * dayMs) },
+                { typeId: 300, quantity: 60, sampledAt: new Date(now - 2 * dayMs) },
+            ]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockLog: { findMany: stockLogFindMany },
+                stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/${structureId}/items`, {
+                    headers: AUTH_HEADERS,
+                });
+                const body = await res.json();
+
+                const item300 = body.items.find((i) => i.typeId === 300);
+                // 100→60, 2일 걸림 → 하루 20 소진, 남은 60개면 3일치.
+                expect(item300.daysLeft).toBeCloseTo(3, 5);
             } finally {
                 server.close();
             }
