@@ -155,8 +155,9 @@ model StockLog {
   @@index([structureId, division, sampledAt])
 }
 
-// 행어(division)·하위 컨테이너별 추적 여부 + 표시 이름. containerName이 null이면
-// division 전체에 적용되는 규칙(예: 행어1 전체 제외), 값이 있으면 그 컨테이너에만 적용.
+// 행어(division)·하위 컨테이너별 추적 여부 + 표시 이름. containerName이 ""(빈 문자열,
+// null 아님 — 아래 필드 주석 참고)이면 division 전체에 적용되는 규칙(예: 행어1 전체
+// 제외), 값이 있으면 그 컨테이너에만 적용.
 // 규칙 평가는 packages/worker/src/schedulers/stockDivisionRules.js의 isTracked() 참고 —
 // containerName 없는 아이템은 규칙 없으면 기본 추적, containerName 있는 아이템은
 // tracked:true 규칙이 명시적으로 있어야만 추적(기본 미추적).
