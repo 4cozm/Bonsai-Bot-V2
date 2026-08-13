@@ -95,9 +95,11 @@ export function createStockRouter() {
 
         res.json({
             ok: true,
+            // DB의 ""(division 전체 규칙 자리표시자, StockDivisionRule 스키마 주석 참고)를
+            // 밖으로 그대로 흘려보내지 않는다 — API 소비자 입장에선 "값 없음"은 null이 맞다.
             divisions: rules.map((r) => ({
                 division: r.division,
-                containerName: r.containerName,
+                containerName: r.containerName || null,
                 displayName: r.displayName,
             })),
         });

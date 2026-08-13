@@ -155,10 +155,14 @@ model StockDivisionRule {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  structure     TrackedStructure @relation(fields: [structureId], references: [structureId])
-  structureId   BigInt
-  division      Int // 1-7
-  containerName String? // null = division 전체 규칙
+  structure   TrackedStructure @relation(fields: [structureId], references: [structureId])
+  structureId BigInt
+  division    Int // 1-7
+  // ""(빈 문자열) = division 전체 규칙. null이 아니라 ""를 쓰는 이유: MySQL에서
+  // 복합 유니크 인덱스 안에 nullable 컬럼이 있으면 Prisma가 그 컬럼이 null인
+  // 조합으로는 upsert() where 조회 자체를 막는다("Argument containerName must
+  // not be null") — 그래서 null 대신 항상 비교 가능한 빈 문자열을 쓴다.
+  containerName String  @default("")
   tracked       Boolean @default(true)
   displayName   String // 프론트 표시용 (예: "PVP", "드론")
 

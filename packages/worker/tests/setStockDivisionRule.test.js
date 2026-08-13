@@ -78,7 +78,7 @@ describe("worker/commands/setStockDivisionRule", () => {
     test("정상 입력 → upsert 후 전체 규칙 목록을 보여준다", async () => {
         const upsert = jest.fn().mockResolvedValue({});
         const findMany = jest.fn().mockResolvedValue([
-            { division: 1, containerName: null, tracked: false, displayName: "store" },
+            { division: 1, containerName: "", tracked: false, displayName: "store" },
             { division: 4, containerName: "드론", tracked: true, displayName: "드론" },
         ]);
         const ctx = {
@@ -137,13 +137,15 @@ describe("worker/commands/setStockDivisionRule", () => {
 
         await setStockDivisionRule.execute(ctx, envelope);
 
+        // null이 아니라 ""다 — MySQL 복합 유니크 인덱스 안의 nullable 컬럼은
+        // Prisma가 upsert() where에 null을 못 쓰게 막는다(회귀 테스트).
         expect(upsert).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: {
                     structureId_division_containerName: {
                         structureId: STRUCTURE_ID,
                         division: 1,
-                        containerName: null,
+                        containerName: "",
                     },
                 },
             })

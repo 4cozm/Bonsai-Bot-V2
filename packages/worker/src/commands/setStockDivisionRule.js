@@ -118,7 +118,10 @@ export default {
             };
         }
 
-        const containerName = String(containerNameRaw ?? "").trim() || null;
+        // ""(빈 문자열)가 "division 전체 규칙" 자리표시자다 — null이 아닌 이유는
+        // stockDivisionRules.js/schema.prisma 주석 참고(MySQL 복합 유니크 인덱스
+        // 안에서 null은 upsert() where에 못 쓴다).
+        const containerName = String(containerNameRaw ?? "").trim();
 
         const structure = await prisma.trackedStructure.findUnique({ where: { structureId } });
         if (!structure) {

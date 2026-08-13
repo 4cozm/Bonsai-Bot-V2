@@ -198,7 +198,7 @@ describe("api/routes/stock", () => {
                 .fn()
                 .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
             const findMany = jest.fn().mockResolvedValue([
-                { division: 2, containerName: null, displayName: "핸드아웃", tracked: true },
+                { division: 2, containerName: "", displayName: "핸드아웃", tracked: true },
                 { division: 4, containerName: "드론", displayName: "드론", tracked: true },
             ]);
             mockGetPrisma.mockReturnValue({

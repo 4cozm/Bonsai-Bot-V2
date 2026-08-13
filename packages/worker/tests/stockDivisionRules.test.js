@@ -10,14 +10,14 @@ describe("stockDivisionRules/isTracked", () => {
     });
 
     test("컨테이너 없는 아이템도 division 전체 제외 규칙이 있으면 안 걸린다", () => {
-        const rules = [{ division: 1, containerName: null, tracked: false }];
+        const rules = [{ division: 1, containerName: "", tracked: false }];
         expect(isTracked({ division: 1, containerItemId: null, containerName: null }, rules)).toBe(
             false
         );
     });
 
     test("division 전체 규칙이 tracked:true면 명시적으로 켜져 있어도 그대로 추적한다", () => {
-        const rules = [{ division: 5, containerName: null, tracked: true }];
+        const rules = [{ division: 5, containerName: "", tracked: true }];
         expect(isTracked({ division: 5, containerItemId: null, containerName: null }, rules)).toBe(
             true
         );
@@ -67,8 +67,19 @@ describe("stockDivisionRules/isTracked", () => {
     });
 
     test("이름 없는 컨테이너라도 division 전체 제외 규칙에는 걸린다", () => {
-        const rules = [{ division: 1, containerName: null, tracked: false }];
+        const rules = [{ division: 1, containerName: "", tracked: false }];
         expect(isTracked({ division: 1, containerItemId: 999, containerName: null }, rules)).toBe(
+            false
+        );
+    });
+
+    // 회귀 테스트: division 전체 규칙의 자리표시자("")와 이름 못 알아낸 컨테이너의
+    // containerName(null)은 절대 같은 값으로 취급되면 안 된다 — 그렇지 않으면 division
+    // 전체를 tracked:true로 열어 둔 순간 그 안의 이름 없는 컨테이너까지 전부 같이
+    // 추적돼 버린다(컨테이너는 항상 명시적으로 켜야 한다는 규칙이 깨짐).
+    test("division 전체 tracked:true 규칙이 있어도 이름 없는 컨테이너까지 같이 켜지지 않는다", () => {
+        const rules = [{ division: 5, containerName: "", tracked: true }];
+        expect(isTracked({ division: 5, containerItemId: 999, containerName: null }, rules)).toBe(
             false
         );
     });

@@ -239,7 +239,7 @@ describe("stockSyncScheduler/syncStructure", () => {
             stockDivisionRule: {
                 findMany: jest
                     .fn()
-                    .mockResolvedValue([{ division: 1, containerName: null, tracked: false }]),
+                    .mockResolvedValue([{ division: 1, containerName: "", tracked: false }]),
             },
         };
         const log = { info: jest.fn(), warn: jest.fn() };
