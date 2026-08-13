@@ -1,8 +1,9 @@
 // packages/api/src/routes/auth.js
 import express from "express";
 import { consumeMagicLinkToken, signSessionJwt } from "@bonsai/shared";
+import { readSession, SESSION_COOKIE_NAME } from "../auth/session.js";
 
-export const SESSION_COOKIE_NAME = "bonsai_session";
+export { SESSION_COOKIE_NAME };
 const SESSION_TTL_SEC = 7 * 24 * 60 * 60; // 7일
 
 /**
@@ -56,6 +57,16 @@ export function createAuthRouter({ redis, log }) {
         });
 
         res.redirect(302, frontendUrl);
+    });
+
+    // 프론트가 페이지 로드 시 이걸로 로그인 여부를 확인한다 — 세션이 없거나
+    // 만료됐으면 401만 주고, 어디로 보낼지(안내 페이지 등)는 프론트가 결정한다.
+    router.get("/me", (req, res) => {
+        const session = readSession(req);
+        if (!session) {
+            return res.status(401).json({ ok: false });
+        }
+        res.json({ ok: true, discordId: session.discordId, tenantKey: session.tenantKey });
     });
 
     return router;

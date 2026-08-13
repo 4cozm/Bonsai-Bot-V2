@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 
 const mockConsumeMagicLinkToken = jest.fn();
 const mockSignSessionJwt = jest.fn();
+const mockVerifySessionJwt = jest.fn();
 
 await jest.unstable_mockModule("@bonsai/shared", () => ({
     consumeMagicLinkToken: mockConsumeMagicLinkToken,
     signSessionJwt: mockSignSessionJwt,
+    verifySessionJwt: mockVerifySessionJwt,
 }));
 
 const { createApp } = await import("../src/server.js");
@@ -91,5 +93,54 @@ describe("api/routes/auth", () => {
         } finally {
             server.close();
         }
+    });
+
+    describe("GET /auth/me", () => {
+        test("쿠키가 없으면 401", async () => {
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/auth/me`);
+                expect(res.status).toBe(401);
+                expect(mockVerifySessionJwt).not.toHaveBeenCalled();
+            } finally {
+                server.close();
+            }
+        });
+
+        test("쿠키가 있지만 검증 실패(만료/위조)면 401", async () => {
+            mockVerifySessionJwt.mockImplementation(() => {
+                throw new Error("만료되었습니다");
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/auth/me`, {
+                    headers: { cookie: `${SESSION_COOKIE_NAME}=bad-token` },
+                });
+                expect(res.status).toBe(401);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("유효한 세션 쿠키면 discordId/tenantKey를 반환한다", async () => {
+            mockVerifySessionJwt.mockReturnValue({
+                discordId: "111",
+                tenantKey: "CAT",
+                iat: 1,
+                exp: 2,
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/auth/me`, {
+                    headers: { cookie: `${SESSION_COOKIE_NAME}=good-token` },
+                });
+                const body = await res.json();
+                expect(res.status).toBe(200);
+                expect(body).toEqual({ ok: true, discordId: "111", tenantKey: "CAT" });
+                expect(mockVerifySessionJwt).toHaveBeenCalledWith("good-token", "test-secret");
+            } finally {
+                server.close();
+            }
+        });
     });
 });
