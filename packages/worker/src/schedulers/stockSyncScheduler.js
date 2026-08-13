@@ -82,7 +82,7 @@ export function aggregateHangarStock(structureId, assets) {
         childrenByParent.get(key).push(a);
     }
 
-    const stockByKey = new Map(); // "typeIddivisioncontainerItemId" → 합산 항목
+    const stockByKey = new Map(); // "typeId|division|containerItemId|itemId" → 합산 항목
     const visited = new Set();
     let frontier = (childrenByParent.get(String(structureId)) ?? []).map((item) => ({
         item,
