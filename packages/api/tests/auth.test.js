@@ -27,27 +27,31 @@ describe("api/routes/auth", () => {
         process.env.STOCK_FRONTEND_URL = "https://supply.catalyst-for-you.com";
     });
 
-    test("token 없으면 400", async () => {
+    test("token 없으면 JSON 대신 프론트 안내 페이지로 리다이렉트한다", async () => {
         const { server, baseUrl } = startTestApp();
         try {
             const res = await fetch(`${baseUrl}/auth/consume`, { redirect: "manual" });
-            expect(res.status).toBe(400);
+            expect(res.status).toBe(302);
+            expect(res.headers.get("location")).toBe(
+                "https://supply.catalyst-for-you.com?authError=missing_token"
+            );
             expect(mockConsumeMagicLinkToken).not.toHaveBeenCalled();
         } finally {
             server.close();
         }
     });
 
-    test("만료/이미 사용된 토큰이면 400", async () => {
+    test("만료/이미 사용된 토큰이면 JSON 대신 프론트 안내 페이지로 리다이렉트한다", async () => {
         mockConsumeMagicLinkToken.mockResolvedValue(null);
         const { server, baseUrl } = startTestApp();
         try {
             const res = await fetch(`${baseUrl}/auth/consume?token=expired`, {
                 redirect: "manual",
             });
-            const body = await res.json();
-            expect(res.status).toBe(400);
-            expect(body.error).toContain("만료");
+            expect(res.status).toBe(302);
+            expect(res.headers.get("location")).toBe(
+                "https://supply.catalyst-for-you.com?authError=expired_link"
+            );
         } finally {
             server.close();
         }
