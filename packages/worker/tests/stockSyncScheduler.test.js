@@ -132,6 +132,62 @@ describe("stockSyncScheduler/aggregateHangarStock", () => {
         ]);
     });
 
+    // 회귀 테스트: 실측(자산진단 명령)으로 확인됨 — division 밑에 이름 붙은 컨테이너가
+    // 한 단계 더 감싸여 있는(2단 중첩) 실제 콥행어 케이스. 안쪽 아이템은 가장 바깥
+    // 컨테이너가 아니라 자기 바로 위(진짜 부모) 컨테이너의 item_id를 받아야 한다 —
+    // 안 그러면 그 이름으로 조회했을 때 엉뚱한(바깥) 컨테이너 이름이 나와서
+    // StockDivisionRule 매칭이 조용히 실패한다(재고가 통째로 안 잡힘).
+    test("컨테이너 안에 또 컨테이너가 있는 2단 중첩도 가장 안쪽 부모의 item_id를 받는다", () => {
+        const OUTER_ID = 900; // division에 직접 있는 바깥 컨테이너(예: 기본 이름 그대로인 폴더)
+        const INNER_ID = 901; // 바깥 컨테이너 안의 "PI" 같은 이름 붙은 안쪽 컨테이너
+        const assets = [
+            {
+                item_id: OUTER_ID,
+                type_id: 3465,
+                location_id: STRUCTURE_ID,
+                location_flag: "CorpSAG4",
+                quantity: 1,
+            },
+            {
+                item_id: INNER_ID,
+                type_id: 3466, // "PI" 컨테이너 자체
+                location_id: OUTER_ID,
+                location_flag: "Unlocked", // 바깥 컨테이너 안에 있어서 CorpSAG 플래그가 없다
+                quantity: 1,
+            },
+            {
+                item_id: 5002,
+                type_id: 3683, // PI 자재
+                location_id: INNER_ID,
+                location_flag: "Unlocked",
+                quantity: 250,
+            },
+        ];
+        const result = aggregateHangarStock(STRUCTURE_ID, assets);
+
+        // 바깥 컨테이너 자체는 division에 직접 있으니 containerItemId가 없다.
+        expect(find(result, 3465)).toEqual({
+            typeId: 3465,
+            division: 4,
+            containerItemId: null,
+            quantity: 1,
+        });
+        // 안쪽 컨테이너("PI") 자체는 바깥 컨테이너 소속이다.
+        expect(find(result, 3466)).toEqual({
+            typeId: 3466,
+            division: 4,
+            containerItemId: OUTER_ID,
+            quantity: 1,
+        });
+        // PI 자재는 바로 위 부모인 INNER_ID("PI") 소속이어야 한다 — OUTER_ID가 아니다.
+        expect(find(result, 3683)).toEqual({
+            typeId: 3683,
+            division: 4,
+            containerItemId: INNER_ID,
+            quantity: 250,
+        });
+    });
+
     test("구조물 자체 피팅(HiSlot 등)은 division 상속 없이 전부 무시한다", () => {
         const FITTED_MODULE_ID = 777;
         const assets = [
