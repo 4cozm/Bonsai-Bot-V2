@@ -83,4 +83,21 @@ describe("stockDivisionRules/isTracked", () => {
             false
         );
     });
+
+    // 회귀 테스트: 함선 개별 커스텀명(itemName) 기능 추가 후에도 isTracked는
+    // itemName을 아예 안 본다 — division/컨테이너 기준 추적 여부가 함선이라고
+    // 달라지면 안 된다(제외된 컨테이너 안 함선도 그대로 제외돼야 함).
+    test("itemName이 있어도(함선) 결과는 division/컨테이너 기준과 동일하다", () => {
+        const rules = [{ division: 4, containerName: "드론", tracked: true }];
+        const withoutName = isTracked(
+            { division: 4, containerItemId: 999, containerName: "드론" },
+            rules
+        );
+        const withName = isTracked(
+            { division: 4, containerItemId: 999, containerName: "드론", itemName: "custom-name" },
+            rules
+        );
+        expect(withName).toBe(withoutName);
+        expect(withName).toBe(true);
+    });
 });

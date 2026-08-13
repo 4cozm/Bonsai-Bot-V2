@@ -121,9 +121,14 @@ model StockTarget {
   structure   TrackedStructure @relation(fields: [structureId], references: [structureId])
   structureId BigInt
   typeId      Int // EVE type_id
-  targetQty   Int
+  // ""(빈 문자열) = 일반(개별 이름 없는) 품목의 목표. PVP/FC행어 등 함선 행어처럼
+  // 같은 typeId라도 게임 내 커스텀명으로 따로 관리해야 할 때만 값이 있다. null이
+  // 아니라 ""인 이유는 StockDivisionRule.containerName과 완전히 같다 — MySQL
+  // 복합 유니크 인덱스 안 nullable 컬럼엔 Prisma가 null where를 못 쓴다.
+  itemName  String @default("")
+  targetQty Int
 
-  @@unique([structureId, typeId])
+  @@unique([structureId, typeId, itemName])
 }
 
 // 재고 수량 스냅샷 로그. 목표 설정 여부와 무관하게 콥행어에서 발견된 품목
@@ -140,6 +145,11 @@ model StockLog {
   quantity      Int
   division      Int? // 1-7 (CorpSAG division). 이 컬럼 추가 이전 행은 null.
   containerName String? // 행어 안 이름 붙은 하위 컨테이너 안에 있으면 그 이름, 아니면 null.
+  // 함선 등 is_singleton 아이템의 게임 내 커스텀명. 유니크 인덱스가 안 걸리는
+  // 컬럼이라 StockTarget.itemName과 달리 그냥 null을 "이름 없음"으로 쓴다
+  // (API 레이어에서 StockTarget의 "" 규약과 반드시 정규화해서 맞춰야 함 —
+  // packages/api/src/routes/stock.js의 nameKey() 참고).
+  itemName String?
 
   @@index([structureId, typeId, sampledAt])
   @@index([structureId, division, sampledAt])

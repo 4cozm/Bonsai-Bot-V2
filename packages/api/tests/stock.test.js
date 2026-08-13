@@ -354,6 +354,80 @@ describe("api/routes/stock", () => {
         });
     });
 
+    describe("GET /v1/stock/structures/:structureId/items — 함선 개별 이름(itemName)", () => {
+        test("같은 typeId라도 itemName이 다르면 서로 다른 품목으로 나뉘고, 각자 이름에 맞는 target을 받는다", async () => {
+            const structureId = 1051025995560n;
+            const findUnique = jest
+                .fn()
+                .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
+            const t1 = new Date("2026-08-13T10:00:00.000Z");
+            const stockLogFindMany = jest.fn().mockResolvedValue([
+                { typeId: 22456, quantity: 1, sampledAt: t1, division: 3, itemName: "에태클" },
+                { typeId: 22456, quantity: 1, sampledAt: t1, division: 3, itemName: "특수임무용" },
+            ]);
+            const stockTargetFindMany = jest.fn().mockResolvedValue([
+                { typeId: 22456, itemName: "에태클", targetQty: 5 },
+                { typeId: 22456, itemName: "", targetQty: 999 }, // 일반(이름없음) 목표 — 섞이면 안 됨
+            ]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockLog: { findMany: stockLogFindMany },
+                stockTarget: { findMany: stockTargetFindMany },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/${structureId}/items`, {
+                    headers: AUTH_HEADERS,
+                });
+                const body = await res.json();
+
+                expect(body.items).toHaveLength(2);
+                const etackle = body.items.find((i) => i.itemName === "에태클");
+                const special = body.items.find((i) => i.itemName === "특수임무용");
+                expect(etackle.target).toBe(5);
+                expect(special.target).toBeNull(); // "특수임무용"용 target row가 없으니 null이어야 함(에태클의 999가 새면 안 됨)
+            } finally {
+                server.close();
+            }
+        });
+
+        test('일반(이름 없는) 품목은 로그의 null과 타겟의 ""가 정규화돼서 정상 매칭된다(회귀)', async () => {
+            const structureId = 1051025995560n;
+            const findUnique = jest
+                .fn()
+                .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
+            const t1 = new Date("2026-08-13T10:00:00.000Z");
+            const stockLogFindMany = jest
+                .fn()
+                .mockResolvedValue([
+                    { typeId: 100, quantity: 5, sampledAt: t1, division: 3, itemName: null },
+                ]);
+            const stockTargetFindMany = jest
+                .fn()
+                .mockResolvedValue([{ typeId: 100, itemName: "", targetQty: 20 }]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockLog: { findMany: stockLogFindMany },
+                stockTarget: { findMany: stockTargetFindMany },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/${structureId}/items`, {
+                    headers: AUTH_HEADERS,
+                });
+                const body = await res.json();
+
+                expect(body.items).toHaveLength(1);
+                expect(body.items[0].target).toBe(20);
+                expect(body.items[0].itemName).toBeNull();
+            } finally {
+                server.close();
+            }
+        });
+    });
+
     describe("GET /v1/stock/structures/:structureId/items/:typeId/history", () => {
         test("days 쿼리 파라미터로 조회 범위를 좁히고, 기본값은 90일이다", async () => {
             const structureId = 1051025995560n;
@@ -407,6 +481,200 @@ describe("api/routes/stock", () => {
                 );
                 const body = await res.json();
                 expect(body.days).toBe(365);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("itemName 쿼리가 있으면 그 이름의 함선 이력만 조회한다", async () => {
+            const structureId = 1051025995560n;
+            const stockLogFindMany = jest.fn().mockResolvedValue([]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId, displayName: "x" }),
+                },
+                stockLog: { findMany: stockLogFindMany },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                await fetch(
+                    `${baseUrl}/v1/stock/structures/${structureId}/items/22456/history?itemName=에태클`,
+                    { headers: AUTH_HEADERS }
+                );
+                const call = stockLogFindMany.mock.calls[0][0];
+                expect(call.where.itemName).toBe("에태클");
+            } finally {
+                server.close();
+            }
+        });
+
+        test("itemName 쿼리가 없으면 itemName으로 필터하지 않는다(일반 품목과 동일)", async () => {
+            const structureId = 1051025995560n;
+            const stockLogFindMany = jest.fn().mockResolvedValue([]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId, displayName: "x" }),
+                },
+                stockLog: { findMany: stockLogFindMany },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                await fetch(`${baseUrl}/v1/stock/structures/${structureId}/items/100/history`, {
+                    headers: AUTH_HEADERS,
+                });
+                const call = stockLogFindMany.mock.calls[0][0];
+                expect(call.where.itemName).toBeUndefined();
+            } finally {
+                server.close();
+            }
+        });
+    });
+
+    describe("PATCH /v1/stock/structures/:structureId/targets", () => {
+        function patch(baseUrl, structureId, body) {
+            return fetch(`${baseUrl}/v1/stock/structures/${structureId}/targets`, {
+                method: "PATCH",
+                headers: { ...AUTH_HEADERS, "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+        }
+
+        test("세션 없으면 401", async () => {
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/1051025995560/targets`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ typeId: 100, targetQty: 10 }),
+                });
+                expect(res.status).toBe(401);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("구조물이 없으면 404", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique: jest.fn().mockResolvedValue(null) },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, 1051025995560n, { typeId: 100, targetQty: 10 });
+                expect(res.status).toBe(404);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("typeId가 올바르지 않으면 400", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId: 1051025995560n }),
+                },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, 1051025995560n, { typeId: -1, targetQty: 10 });
+                expect(res.status).toBe(400);
+            } finally {
+                server.close();
+            }
+        });
+
+        test('targetQty>0이면 upsert로 저장한다(itemName 생략시 "" 로 정규화)', async () => {
+            const structureId = 1051025995560n;
+            const upsert = jest.fn().mockResolvedValue({});
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId }),
+                },
+                stockTarget: { upsert },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, structureId, { typeId: 100, targetQty: 20 });
+                const body = await res.json();
+
+                expect(res.status).toBe(200);
+                expect(body).toEqual({ ok: true });
+                expect(upsert).toHaveBeenCalledWith({
+                    where: {
+                        structureId_typeId_itemName: { structureId, typeId: 100, itemName: "" },
+                    },
+                    create: { structureId, typeId: 100, itemName: "", targetQty: 20 },
+                    update: { targetQty: 20 },
+                });
+            } finally {
+                server.close();
+            }
+        });
+
+        test("itemName을 주면 그대로 upsert에 실린다(함선 개별 목표)", async () => {
+            const structureId = 1051025995560n;
+            const upsert = jest.fn().mockResolvedValue({});
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId }),
+                },
+                stockTarget: { upsert },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                await patch(baseUrl, structureId, {
+                    typeId: 22456,
+                    itemName: "에태클",
+                    targetQty: 3,
+                });
+
+                expect(upsert).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        create: { structureId, typeId: 22456, itemName: "에태클", targetQty: 3 },
+                    })
+                );
+            } finally {
+                server.close();
+            }
+        });
+
+        test("targetQty<=0이면 deleteMany로 지운다(delete가 아님 — 없는 행이어도 성공해야 함)", async () => {
+            const structureId = 1051025995560n;
+            const deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId }),
+                },
+                stockTarget: { deleteMany },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, structureId, { typeId: 100, targetQty: 0 });
+                const body = await res.json();
+
+                expect(res.status).toBe(200);
+                expect(body).toEqual({ ok: true });
+                expect(deleteMany).toHaveBeenCalledWith({
+                    where: { structureId, typeId: 100, itemName: "" },
+                });
+            } finally {
+                server.close();
+            }
+        });
+
+        test("targetQty가 숫자가 아니면 400", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId: 1051025995560n }),
+                },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, 1051025995560n, {
+                    typeId: 100,
+                    targetQty: "abc",
+                });
+                expect(res.status).toBe(400);
             } finally {
                 server.close();
             }
