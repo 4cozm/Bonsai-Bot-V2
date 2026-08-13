@@ -31,6 +31,25 @@ function toQuantityPoint(row) {
 }
 
 /**
+ * 같은 typeId라도 division/컨테이너별로 별도 행(row)이라, 같은 sampledAt(한 동기화
+ * 사이클은 항상 같은 timestamp)끼리 quantity를 합산해서 "그 시점의 typeId 총량"
+ * 시계열로 되돌린다. division 필터가 없을 때는 원래 하나의 행이었던 것과 수학적으로
+ * 동일한 결과가 나온다 — burnRate 계산 로직은 그대로 재사용한다.
+ * @param {{sampledAt:Date, quantity:number}[]} rows 같은 typeId의 로그 행들
+ * @returns {{sampledAt:Date, quantity:number}[]} sampledAt 오름차순
+ */
+function reconstructSeries(rows) {
+    const byTime = new Map();
+    for (const row of rows) {
+        const key = row.sampledAt.getTime();
+        byTime.set(key, (byTime.get(key) ?? 0) + row.quantity);
+    }
+    return [...byTime.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([time, quantity]) => ({ sampledAt: new Date(time), quantity }));
+}
+
+/**
  * @returns {import("express").Router}
  */
 export function createStockRouter() {
@@ -54,8 +73,10 @@ export function createStockRouter() {
         });
     });
 
-    // GET /v1/stock/structures/:structureId/items — 현재 재고 목록(+최근 24건 스파크라인용).
-    router.get("/structures/:structureId/items", async (req, res) => {
+    // GET /v1/stock/structures/:structureId/divisions — 이 구조물에 설정된 추적 대상
+    // 행어/컨테이너 목록(관리자가 /재고행어설정으로 등록한 것 중 tracked:true만).
+    // 한글 행어 이름을 프론트에 하드코딩하지 않고 이 목록으로 선택 UI를 채운다.
+    router.get("/structures/:structureId/divisions", async (req, res) => {
         const structureId = parseBigIntParam(req.params.structureId);
         if (structureId == null) {
             return res.status(400).json({ ok: false, error: "structureId가 올바르지 않습니다." });
@@ -67,14 +88,65 @@ export function createStockRouter() {
             return res.status(404).json({ ok: false, error: "구조물을 찾을 수 없습니다." });
         }
 
+        const rules = await prisma.stockDivisionRule.findMany({
+            where: { structureId, tracked: true },
+            orderBy: [{ division: "asc" }, { containerName: "asc" }],
+        });
+
+        res.json({
+            ok: true,
+            divisions: rules.map((r) => ({
+                division: r.division,
+                containerName: r.containerName,
+                displayName: r.displayName,
+            })),
+        });
+    });
+
+    // GET /v1/stock/structures/:structureId/items — 현재 재고 목록(+최근 24건 스파크라인용).
+    // ?division=4&container=드론 으로 특정 행어/컨테이너에 있는 typeId만 좁힐 수 있다
+    // (target/deficit은 여전히 구조물 전체 기준 — 필터는 "어디 있는 typeId를 보여줄지"만 좁힌다).
+    router.get("/structures/:structureId/items", async (req, res) => {
+        const structureId = parseBigIntParam(req.params.structureId);
+        if (structureId == null) {
+            return res.status(400).json({ ok: false, error: "structureId가 올바르지 않습니다." });
+        }
+
+        let division = null;
+        if (req.query?.division != null && String(req.query.division).trim() !== "") {
+            division = Number(req.query.division);
+            if (!Number.isInteger(division)) {
+                return res.status(400).json({ ok: false, error: "division이 올바르지 않습니다." });
+            }
+        }
+        const container =
+            typeof req.query?.container === "string" && req.query.container.trim()
+                ? req.query.container.trim()
+                : null;
+
+        const prisma = getPrisma(req.session.tenantKey);
+        const structure = await prisma.trackedStructure.findUnique({ where: { structureId } });
+        if (!structure) {
+            return res.status(404).json({ ok: false, error: "구조물을 찾을 수 없습니다." });
+        }
+
         const since = new Date(Date.now() - BURN_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-        const [logs, targets] = await Promise.all([
+        const [logsRaw, targets] = await Promise.all([
             prisma.stockLog.findMany({
                 where: { structureId, sampledAt: { gte: since } },
                 orderBy: { sampledAt: "asc" },
             }),
             prisma.stockTarget.findMany({ where: { structureId } }),
         ]);
+
+        const logs =
+            division == null && container == null
+                ? logsRaw
+                : logsRaw.filter(
+                      (l) =>
+                          (division == null || l.division === division) &&
+                          (container == null || l.containerName === container)
+                  );
 
         const targetByType = new Map(targets.map((t) => [t.typeId, t.targetQty]));
 
@@ -86,17 +158,18 @@ export function createStockRouter() {
 
         let latestSampledAt = null;
         const items = [...byType.entries()].map(([typeId, rows]) => {
-            const last = rows[rows.length - 1];
+            const series = reconstructSeries(rows);
+            const last = series[series.length - 1];
             if (!latestSampledAt || last.sampledAt > latestSampledAt) {
                 latestSampledAt = last.sampledAt;
             }
-            const burnRatePerDay = computeBurnRatePerDay(rows, BURN_WINDOW_DAYS);
+            const burnRatePerDay = computeBurnRatePerDay(series, BURN_WINDOW_DAYS);
             return {
                 typeId,
                 stocked: last.quantity,
                 target: targetByType.get(typeId) ?? null,
                 daysLeft: computeDaysLeft(last.quantity, burnRatePerDay),
-                recentHistory: rows.slice(-RECENT_HISTORY_POINTS).map(toQuantityPoint),
+                recentHistory: series.slice(-RECENT_HISTORY_POINTS).map(toQuantityPoint),
             };
         });
 

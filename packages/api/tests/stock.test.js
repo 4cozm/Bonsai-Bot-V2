@@ -191,6 +191,169 @@ describe("api/routes/stock", () => {
         });
     });
 
+    describe("GET /v1/stock/structures/:structureId/divisions", () => {
+        test("tracked:true인 규칙만 division/containerName 순으로 반환한다", async () => {
+            const structureId = 1051025995560n;
+            const findUnique = jest
+                .fn()
+                .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
+            const findMany = jest.fn().mockResolvedValue([
+                { division: 2, containerName: null, displayName: "핸드아웃", tracked: true },
+                { division: 4, containerName: "드론", displayName: "드론", tracked: true },
+            ]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockDivisionRule: { findMany },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/${structureId}/divisions`, {
+                    headers: AUTH_HEADERS,
+                });
+                const body = await res.json();
+
+                expect(res.status).toBe(200);
+                expect(findMany).toHaveBeenCalledWith({
+                    where: { structureId, tracked: true },
+                    orderBy: [{ division: "asc" }, { containerName: "asc" }],
+                });
+                expect(body).toEqual({
+                    ok: true,
+                    divisions: [
+                        { division: 2, containerName: null, displayName: "핸드아웃" },
+                        { division: 4, containerName: "드론", displayName: "드론" },
+                    ],
+                });
+            } finally {
+                server.close();
+            }
+        });
+
+        test("구조물이 없으면 404", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique: jest.fn().mockResolvedValue(null) },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/12345/divisions`, {
+                    headers: AUTH_HEADERS,
+                });
+                expect(res.status).toBe(404);
+            } finally {
+                server.close();
+            }
+        });
+    });
+
+    describe("GET /v1/stock/structures/:structureId/items?division=", () => {
+        test("division 필터를 주면 다른 division의 같은 typeId는 안 섞인다", async () => {
+            const structureId = 1051025995560n;
+            const findUnique = jest
+                .fn()
+                .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
+            const t1 = new Date("2026-08-13T10:00:00.000Z");
+            const stockLogFindMany = jest.fn().mockResolvedValue([
+                { typeId: 100, quantity: 5, sampledAt: t1, division: 3, containerName: null },
+                { typeId: 100, quantity: 12, sampledAt: t1, division: 4, containerName: "드론" },
+            ]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockLog: { findMany: stockLogFindMany },
+                stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(
+                    `${baseUrl}/v1/stock/structures/${structureId}/items?division=4&container=드론`,
+                    { headers: AUTH_HEADERS }
+                );
+                const body = await res.json();
+
+                expect(res.status).toBe(200);
+                expect(body.items).toHaveLength(1);
+                expect(body.items[0]).toMatchObject({ typeId: 100, stocked: 12 });
+            } finally {
+                server.close();
+            }
+        });
+
+        test("division 필터 없으면 같은 typeId의 여러 division 값을 시점별로 합산한다", async () => {
+            const structureId = 1051025995560n;
+            const findUnique = jest
+                .fn()
+                .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
+            const t1 = new Date("2026-08-13T10:00:00.000Z");
+            const stockLogFindMany = jest.fn().mockResolvedValue([
+                { typeId: 100, quantity: 5, sampledAt: t1, division: 3, containerName: null },
+                { typeId: 100, quantity: 12, sampledAt: t1, division: 4, containerName: "드론" },
+            ]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockLog: { findMany: stockLogFindMany },
+                stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/${structureId}/items`, {
+                    headers: AUTH_HEADERS,
+                });
+                const body = await res.json();
+
+                expect(body.items).toHaveLength(1);
+                expect(body.items[0]).toMatchObject({ typeId: 100, stocked: 17 });
+            } finally {
+                server.close();
+            }
+        });
+
+        test("division 없이 container만 줘도 그 컨테이너로만 좁힌다", async () => {
+            const structureId = 1051025995560n;
+            const findUnique = jest
+                .fn()
+                .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
+            const t1 = new Date("2026-08-13T10:00:00.000Z");
+            const stockLogFindMany = jest.fn().mockResolvedValue([
+                { typeId: 100, quantity: 5, sampledAt: t1, division: 3, containerName: null },
+                { typeId: 100, quantity: 12, sampledAt: t1, division: 4, containerName: "드론" },
+            ]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockLog: { findMany: stockLogFindMany },
+                stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(
+                    `${baseUrl}/v1/stock/structures/${structureId}/items?container=드론`,
+                    { headers: AUTH_HEADERS }
+                );
+                const body = await res.json();
+
+                expect(body.items).toHaveLength(1);
+                expect(body.items[0]).toMatchObject({ typeId: 100, stocked: 12 });
+            } finally {
+                server.close();
+            }
+        });
+
+        test("division 쿼리가 정수가 아니면 400", async () => {
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(
+                    `${baseUrl}/v1/stock/structures/1051025995560/items?division=abc`,
+                    { headers: AUTH_HEADERS }
+                );
+                expect(res.status).toBe(400);
+            } finally {
+                server.close();
+            }
+        });
+    });
+
     describe("GET /v1/stock/structures/:structureId/items/:typeId/history", () => {
         test("days 쿼리 파라미터로 조회 범위를 좁히고, 기본값은 90일이다", async () => {
             const structureId = 1051025995560n;

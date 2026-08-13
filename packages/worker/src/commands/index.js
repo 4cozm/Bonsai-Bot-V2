@@ -12,6 +12,7 @@ import marketPrice from "./marketPrice.js";
 import pajamaHotCheck from "./pajamaHotCheck.js";
 import ping from "./ping.js";
 import registerTrackedStructure from "./registerTrackedStructure.js";
+import setStockDivisionRule from "./setStockDivisionRule.js";
 
 export function getCommandDefinitions() {
     return [
@@ -27,6 +28,7 @@ export function getCommandDefinitions() {
         pajamaHotCheck,
         esiAssetDebug,
         registerTrackedStructure,
+        setStockDivisionRule,
         issueSupplyLink,
     ];
 }

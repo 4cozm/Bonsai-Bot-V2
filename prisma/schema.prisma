@@ -107,8 +107,9 @@ model TrackedStructure {
   displayName   String // 표시용 이름 (예: "SAVE CAT")
   active        Boolean @default(true) // false면 동기화 스킵(파괴/철거 등)
 
-  targets StockTarget[]
-  logs    StockLog[]
+  targets       StockTarget[]
+  logs          StockLog[]
+  divisionRules StockDivisionRule[]
 }
 
 // 품목별 목표 재고 수량. 프론트에서 명시적으로 목표를 설정한 품목만 생긴다.
@@ -133,10 +134,33 @@ model StockLog {
   id        String   @id @default(cuid())
   sampledAt DateTime @default(now())
 
-  structure   TrackedStructure @relation(fields: [structureId], references: [structureId])
-  structureId BigInt
-  typeId      Int
-  quantity    Int
+  structure     TrackedStructure @relation(fields: [structureId], references: [structureId])
+  structureId   BigInt
+  typeId        Int
+  quantity      Int
+  division      Int? // 1-7 (CorpSAG division). 이 컬럼 추가 이전 행은 null.
+  containerName String? // 행어 안 이름 붙은 하위 컨테이너 안에 있으면 그 이름, 아니면 null.
 
   @@index([structureId, typeId, sampledAt])
+  @@index([structureId, division, sampledAt])
+}
+
+// 행어(division)·하위 컨테이너별 추적 여부 + 표시 이름. containerName이 null이면
+// division 전체에 적용되는 규칙(예: 행어1 전체 제외), 값이 있으면 그 컨테이너에만 적용.
+// 규칙 평가는 packages/worker/src/schedulers/stockDivisionRules.js의 isTracked() 참고 —
+// containerName 없는 아이템은 규칙 없으면 기본 추적, containerName 있는 아이템은
+// tracked:true 규칙이 명시적으로 있어야만 추적(기본 미추적).
+model StockDivisionRule {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  structure     TrackedStructure @relation(fields: [structureId], references: [structureId])
+  structureId   BigInt
+  division      Int // 1-7
+  containerName String? // null = division 전체 규칙
+  tracked       Boolean @default(true)
+  displayName   String // 프론트 표시용 (예: "PVP", "드론")
+
+  @@unique([structureId, division, containerName])
 }
