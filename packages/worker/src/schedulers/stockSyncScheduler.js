@@ -215,6 +215,33 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
     }
     const finalEntries = [...mergedByName.values()];
 
+    // 목표 수량을 안 잡아둔 함선(이름 있는 아이템)은 30일 이력을 안 쌓는다 — 실수로
+    // 컨테이너/함선 이름을 잘못 넣었다가 나중에 고쳐도, 옛날 잘못된 이름의 기록이
+    // 조회 창(30일)에서 자연히 빠질 때까지 유령처럼 계속 보이는 게 더 번거롭다는
+    // 판단(사용자 확인). 목표를 잡아둔 함선/일반 소모품은 그대로 30일 누적 유지 —
+    // 매 사이클마다 지우고 다시 쓸 대상만 딱 골라낸다.
+    const targets = await prisma.stockTarget.findMany({
+        where: { structureId: structure.structureId },
+    });
+    const targetKeys = new Set(targets.map((t) => `${t.typeId}::${t.itemName || ""}`));
+
+    const existingNamedCombos = await prisma.stockLog.findMany({
+        where: { structureId: structure.structureId, itemName: { not: null } },
+        select: { typeId: true, itemName: true },
+        distinct: ["typeId", "itemName"],
+    });
+    const noTargetCombos = existingNamedCombos.filter(
+        (c) => !targetKeys.has(`${c.typeId}::${c.itemName || ""}`)
+    );
+    if (noTargetCombos.length > 0) {
+        await prisma.stockLog.deleteMany({
+            where: {
+                structureId: structure.structureId,
+                OR: noTargetCombos.map((c) => ({ typeId: c.typeId, itemName: c.itemName })),
+            },
+        });
+    }
+
     const sampledAt = new Date();
     if (finalEntries.length > 0) {
         await prisma.stockLog.createMany({

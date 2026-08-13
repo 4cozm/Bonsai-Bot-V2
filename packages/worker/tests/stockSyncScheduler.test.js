@@ -333,8 +333,13 @@ describe("stockSyncScheduler/syncStructure", () => {
             ],
         }));
         const prisma = {
-            stockLog: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
             stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
         };
         const log = { info: jest.fn(), warn: jest.fn() };
 
@@ -375,12 +380,17 @@ describe("stockSyncScheduler/syncStructure", () => {
             ],
         }));
         const prisma = {
-            stockLog: { createMany: jest.fn() },
+            stockLog: {
+                createMany: jest.fn(),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
             stockDivisionRule: {
                 findMany: jest
                     .fn()
                     .mockResolvedValue([{ division: 1, containerName: "", tracked: false }]),
             },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
         };
         const log = { info: jest.fn(), warn: jest.fn() };
 
@@ -427,12 +437,17 @@ describe("stockSyncScheduler/syncStructure", () => {
             };
         });
         const prisma = {
-            stockLog: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
             stockDivisionRule: {
                 findMany: jest
                     .fn()
                     .mockResolvedValue([{ division: 4, containerName: "드론", tracked: true }]),
             },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
         };
         const log = { info: jest.fn(), warn: jest.fn() };
 
@@ -492,8 +507,13 @@ describe("stockSyncScheduler/syncStructure", () => {
             };
         });
         const prisma = {
-            stockLog: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
             stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
         };
         const log = { info: jest.fn(), warn: jest.fn() };
 
@@ -554,8 +574,13 @@ describe("stockSyncScheduler/syncStructure", () => {
             };
         });
         const prisma = {
-            stockLog: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
             stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
         };
         const log = { info: jest.fn(), warn: jest.fn() };
 
@@ -611,8 +636,13 @@ describe("stockSyncScheduler/syncStructure", () => {
             };
         });
         const prisma = {
-            stockLog: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
             stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
         };
         const log = { info: jest.fn(), warn: jest.fn() };
 
@@ -669,8 +699,13 @@ describe("stockSyncScheduler/syncStructure", () => {
             };
         });
         const prisma = {
-            stockLog: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
             stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
         };
         const log = { info: jest.fn(), warn: jest.fn() };
 
@@ -683,6 +718,144 @@ describe("stockSyncScheduler/syncStructure", () => {
 
         expect(namesCalls).toHaveLength(1);
         expect(namesCalls[0].sort()).toEqual([CONTAINER_ID, SHIP_ID].sort());
+    });
+
+    // 목표 없는(이름 있는) 함선은 이력을 안 쌓는다 — 매 사이클마다 예전 기록을 지우고
+    // 새로 쓴다. 실수로 잘못된 이름을 넣었다가 고쳐도 옛날 잘못된 이름이 30일 창
+    // 안에서 유령처럼 계속 보이는 걸 막기 위함(사용자 확인).
+    test("목표 없는 함선은 동기화 전에 그 (typeId, itemName)의 옛 기록을 지운다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        const SHIP_ID = 7001;
+        global.fetch = jest.fn(async (url) => {
+            if (String(url).includes("/assets/names/")) {
+                return { ok: true, json: async () => [{ item_id: SHIP_ID, name: "에태클" }] };
+            }
+            return {
+                ok: true,
+                headers: { get: () => "1" },
+                json: async () => [
+                    {
+                        item_id: SHIP_ID,
+                        type_id: 22456,
+                        location_id: STRUCTURE_ID,
+                        location_flag: "CorpSAG3",
+                        quantity: 1,
+                        is_singleton: true,
+                    },
+                ],
+            };
+        });
+        const deleteMany = jest.fn().mockResolvedValue({ count: 3 });
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                // 예전에 잘못 지은 이름("애태클", 오타)으로 이미 쌓여 있던 기록.
+                findMany: jest.fn().mockResolvedValue([{ typeId: 22456, itemName: "애태클" }]),
+                deleteMany,
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) }, // 목표 없음
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        expect(deleteMany).toHaveBeenCalledWith({
+            where: {
+                structureId: STRUCTURE_ID,
+                OR: [{ typeId: 22456, itemName: "애태클" }],
+            },
+        });
+    });
+
+    test("목표가 있는 함선은 옛 기록을 안 지우고 그대로 누적한다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        const SHIP_ID = 7001;
+        global.fetch = jest.fn(async (url) => {
+            if (String(url).includes("/assets/names/")) {
+                return { ok: true, json: async () => [{ item_id: SHIP_ID, name: "에태클" }] };
+            }
+            return {
+                ok: true,
+                headers: { get: () => "1" },
+                json: async () => [
+                    {
+                        item_id: SHIP_ID,
+                        type_id: 22456,
+                        location_id: STRUCTURE_ID,
+                        location_flag: "CorpSAG3",
+                        quantity: 1,
+                        is_singleton: true,
+                    },
+                ],
+            };
+        });
+        const deleteMany = jest.fn();
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                findMany: jest.fn().mockResolvedValue([{ typeId: 22456, itemName: "에태클" }]),
+                deleteMany,
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: {
+                // "에태클"에 목표가 잡혀 있음 — 지금 동기화되는 이름과 동일.
+                findMany: jest
+                    .fn()
+                    .mockResolvedValue([{ typeId: 22456, itemName: "에태클", targetQty: 3 }]),
+            },
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        expect(deleteMany).not.toHaveBeenCalled();
+    });
+
+    test("현재 사이클에 안 나타나는(이름 바뀌었거나 사라진) 목표 없는 함선 유령 기록도 지운다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        global.fetch = jest.fn(async (url) => {
+            if (String(url).includes("/assets/names/")) {
+                return { ok: true, json: async () => [] };
+            }
+            return { ok: true, headers: { get: () => "1" }, json: async () => [] }; // 이번엔 자산 자체가 없음
+        });
+        const deleteMany = jest.fn().mockResolvedValue({ count: 5 });
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn(),
+                // DB에는 예전에 있었지만 이번 사이클엔 안 잡히는 함선(팔았거나 옮겨짐).
+                findMany: jest.fn().mockResolvedValue([{ typeId: 22456, itemName: "예전함선" }]),
+                deleteMany,
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        expect(deleteMany).toHaveBeenCalledWith({
+            where: {
+                structureId: STRUCTURE_ID,
+                OR: [{ typeId: 22456, itemName: "예전함선" }],
+            },
+        });
     });
 
     test("콥 자산 조회가 실패하면(non-ok) StockLog를 기록하지 않는다", async () => {
