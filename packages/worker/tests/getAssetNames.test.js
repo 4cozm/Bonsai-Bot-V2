@@ -75,27 +75,51 @@ describe("worker/esi/getAssetNames", () => {
         expect(result.get(250)).toBe("name-250");
     });
 
-    test("일부 청크가 실패해도 나머지 결과는 유지한다", async () => {
-        let call = 0;
-        globalThis.fetch = jest.fn().mockImplementation(() => {
-            call += 1;
-            if (call === 1) return Promise.resolve({ ok: false, status: 420 });
+    test("한 청크가 재시도까지 다 실패해도 나머지 청크 결과는 유지한다", async () => {
+        globalThis.fetch = jest.fn().mockImplementation((url, opts) => {
+            const batch = JSON.parse(opts.body);
+            // id=1이 섞인 청크(1~200)는 원 요청·재시도 둘 다 실패, 나머지 청크는 항상 성공.
+            if (batch.includes(1)) {
+                return Promise.resolve({ ok: false, status: 420 });
+            }
             return Promise.resolve({
                 ok: true,
-                json: () => Promise.resolve([{ item_id: 999, name: "PVP" }]),
+                json: () =>
+                    Promise.resolve(batch.map((id) => ({ item_id: id, name: `name-${id}` }))),
             });
         });
         const ids = Array.from({ length: 250 }, (_, i) => i + 1);
 
         const result = await getAssetNames("token", 12345, ids);
 
-        expect(result.get(999)).toBe("PVP");
-        expect(result.size).toBe(1);
+        expect(result.has(1)).toBe(false);
+        expect(result.get(250)).toBe("name-250");
+        expect(result.size).toBe(50);
+        // 실패 청크: 원 요청 + 재시도 = 2번, 성공 청크: 1번 → 총 3번.
+        expect(globalThis.fetch).toHaveBeenCalledTimes(3);
     });
 
-    test("fetch가 throw해도 예외를 던지지 않고 빈 결과로 처리한다", async () => {
+    test("첫 시도가 실패해도 재시도가 성공하면 결과에 포함된다 — 실제로 겪은 버그의 핵심", async () => {
+        let attempts = 0;
+        globalThis.fetch = jest.fn().mockImplementation(() => {
+            attempts += 1;
+            if (attempts === 1) return Promise.resolve({ ok: false, status: 500 });
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve([{ item_id: 1, name: "재시도로 성공" }]),
+            });
+        });
+
+        const result = await getAssetNames("token", 12345, [1]);
+
+        expect(result.get(1)).toBe("재시도로 성공");
+        expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    test("fetch가 재시도까지 계속 throw해도 예외를 던지지 않고 빈 결과로 처리한다", async () => {
         globalThis.fetch = jest.fn().mockRejectedValue(new Error("network error"));
         const result = await getAssetNames("token", 12345, [1]);
         expect(result.size).toBe(0);
+        expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     });
 });
