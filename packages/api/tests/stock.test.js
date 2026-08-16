@@ -137,6 +137,7 @@ describe("api/routes/stock", () => {
                     structureId: "1051025995560",
                     displayName: "SAVE CAT",
                     syncedAt: t2.toISOString(),
+                    nextSyncAt: null,
                 });
 
                 const item100 = body.items.find((i) => i.typeId === 100);
@@ -153,6 +154,34 @@ describe("api/routes/stock", () => {
                 expect(item200.stocked).toBe(3);
                 expect(item200.target).toBeNull();
                 expect(item200.daysLeft).toBeNull();
+            } finally {
+                server.close();
+            }
+        });
+
+        test("TrackedStructure.nextSyncAt이 있으면 그대로 전달한다", async () => {
+            const structureId = 1051025995560n;
+            const nextSyncAt = new Date("2026-08-16T12:30:00.000Z");
+            const findUnique = jest.fn().mockResolvedValue({
+                structureId,
+                displayName: "SAVE CAT",
+                nextSyncAt,
+            });
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockLog: { findMany: jest.fn().mockResolvedValue([]) },
+                stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/${structureId}/items`, {
+                    headers: AUTH_HEADERS,
+                });
+                const body = await res.json();
+
+                expect(res.status).toBe(200);
+                expect(body.structure.nextSyncAt).toBe(nextSyncAt.toISOString());
             } finally {
                 server.close();
             }

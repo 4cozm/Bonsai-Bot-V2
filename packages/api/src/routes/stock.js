@@ -200,6 +200,10 @@ export function createStockRouter() {
                 structureId: String(structure.structureId),
                 displayName: structure.displayName,
                 syncedAt: latestSampledAt ? latestSampledAt.toISOString() : null,
+                // 워커가 직전 동기화 시도의 ESI Expires 헤더로 매번 갱신하는 값(없으면
+                // 1시간 폴백) — 실제 동기화 타이밍을 이 값이 결정하진 않는다(워커는
+                // 별도 인메모리 스케줄을 씀), 프론트 "다음 동기화 N분 후" 표시 전용.
+                nextSyncAt: structure.nextSyncAt ? structure.nextSyncAt.toISOString() : null,
             },
             items,
         });

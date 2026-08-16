@@ -106,6 +106,11 @@ model TrackedStructure {
   corporationId Int // 콥행어(오피스)를 실제로 들고 있는 콥
   displayName   String // 표시용 이름 (예: "SAVE CAT")
   active        Boolean @default(true) // false면 동기화 스킵(파괴/철거 등)
+  // 다음 동기화 예정 시각. 직전 동기화 시도의 ESI 콥 자산 응답 Expires 헤더 기반으로
+  // 워커가 매번 갱신한다(헤더 없으면 1시간 뒤 폴백) — 프론트가 "다음 동기화 N분 후"를
+  // 보여주는 데 쓴다. 실제 동기화 타이밍을 이 컬럼이 결정하는 건 아니다(워커는 별도
+  // 인메모리 스케줄을 씀) — 이건 어디까지나 표시용 미러.
+  nextSyncAt DateTime?
 
   targets       StockTarget[]
   logs          StockLog[]
