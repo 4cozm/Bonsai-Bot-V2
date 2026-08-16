@@ -7,32 +7,97 @@ import { getAssetNames } from "../esi/getAssetNames.js";
 import { isTracked } from "./stockDivisionRules.js";
 
 const ESI_BASE = "https://esi.evetech.net/latest";
-// ESI 콥 자산 엔드포인트가 최대 1시간(3600초) 캐시라, 더 자주 돌아도 새 데이터를 못 받는다.
-const CRON_SCHEDULE = "0 * * * *"; // 매시 정각
+// ESI 콥 자산 엔드포인트의 실제 캐시 만료 시각은 응답 Expires 헤더로 온다 — 정각(:00)에
+// 딱 맞춰 갱신되는 게 아니라 콥/시점마다 제각각이라, "최대 1시간"이라고만 가정하고 매시
+// 정각에 도는 건 캐시 경계 직전엔 헛수고, 직후엔 최대 1시간 가까이 묵은 데이터를 받을
+// 위험이 있다. 그래서 이 tick은 5분마다 "구조물별로 지금 동기화할 때가 됐나"만 점검하고,
+// 실제 다음 동기화 시각은 매번 응답 Expires 헤더를 읽어 구조물별로 따로 잡는다.
+const TICK_SCHEDULE = "*/5 * * * *";
+// Expires 헤더가 없을 때(최초 동기화, 조회 실패, 토큰 없음 등) 쓰는 기본 재시도 간격 —
+// 예전 "매시 정각" 고정 스케줄과 같은 값이라 실패 시에도 예전보다 나빠지지 않는다.
+const FALLBACK_INTERVAL_MS = 60 * 60 * 1000;
+// 캐시 경계 직후 살짝 여유를 둔다 — 시계 오차로 아직 안 갱신된 캐시를 또 받는 것 방지.
+const EXPIRY_BUFFER_MS = 10_000;
 const CORPSAG_FLAG_RE = /^CorpSAG[1-7]$/;
+
+// structureId(문자열) → 다음 동기화가 의미 있어지는 시각(epoch ms). 워커 프로세스가
+// 재시작되면 비워지는데, 그러면 다음 tick에서 바로 한 번 동기화하고(모르니 일단
+// 확인) 그때부터 진짜 Expires 기준으로 넘어간다 — 재시작 직후 잠깐 더 자주 도는 것
+// 외엔 문제 없다.
+const nextSyncAt = new Map();
+
+function scheduleNext(structureId, expiresAtMs) {
+    const at =
+        expiresAtMs != null ? expiresAtMs + EXPIRY_BUFFER_MS : Date.now() + FALLBACK_INTERVAL_MS;
+    nextSyncAt.set(String(structureId), at);
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ESI가 일시적으로 흔들릴 때(네트워크 순간 끊김, 5xx, 420/429) 한 번은 잠깐 쉬었다 다시
+// 시도한다 — getAssetNames.js의 withRetry와 같은 패턴, 같은 이유(재시도가 없으면 tick
+// 시작 시점에 ESI가 잠깐 흔들리기만 해도 그 사이클 전체가 통째로 스킵됨).
+async function withRetry(fn) {
+    try {
+        return await fn();
+    } catch {
+        await sleep(400 + Math.random() * 400);
+        return fn();
+    }
+}
 
 /**
  * 콥 자산을 페이지네이션 끝까지 받는다. 실패하면 null(부분 성공 없음 — 재고 숫자를
  * 반토막 낸 채로 기록하면 "부족" 오판정을 유발하므로 전부 못 받으면 이번 사이클은
- * 건너뛴다).
+ * 건너뛴다). 페이지별 요청은 재시도까지 다 실패해야 포기한다.
+ *
+ * @returns {Promise<{assets: object[], expiresAt: number|null} | null>} expiresAt은 응답
+ *          Expires 헤더를 파싱한 epoch ms(페이지가 여럿이면 가장 이른 값) — 다음 동기화
+ *          시각을 잡는 데 쓴다. 헤더가 없거나 파싱 실패하면 null(호출자가 폴백 간격을 씀).
  */
 async function fetchAllCorpAssets(corporationId, accessToken) {
     const assets = [];
     let page = 1;
     let totalPages = 1;
+    let expiresAt = null;
 
     do {
-        const res = await fetch(
-            `${ESI_BASE}/corporations/${corporationId}/assets/?datasource=tranquility&page=${page}`,
-            { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
-        if (!res.ok) return null;
+        const currentPage = page;
+        const fetchPage = async () => {
+            const res = await fetch(
+                `${ESI_BASE}/corporations/${corporationId}/assets/?datasource=tranquility&page=${currentPage}`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            if (!res.ok) {
+                const err = new Error(`[stock-sync] assets 조회 실패 status=${res.status}`);
+                err.status = res.status;
+                throw err;
+            }
+            return res;
+        };
+
+        let res;
+        try {
+            res = await withRetry(fetchPage);
+        } catch {
+            return null;
+        }
+
         totalPages = Number(res.headers.get("x-pages") ?? 1) || 1;
+        const expiresHeader = res.headers.get("expires");
+        if (expiresHeader) {
+            const parsed = Date.parse(expiresHeader);
+            if (!Number.isNaN(parsed) && (expiresAt == null || parsed < expiresAt)) {
+                expiresAt = parsed;
+            }
+        }
         assets.push(...(await res.json()));
         page += 1;
     } while (page <= totalPages);
 
-    return assets;
+    return { assets, expiresAt };
 }
 
 /**
@@ -151,16 +216,19 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
         log.warn("[stock-sync] 토큰 없음, 구조물 스킵", {
             structureId: String(structure.structureId),
         });
+        scheduleNext(structure.structureId, null);
         return { ok: false, reason: "토큰 없음(만료/미등록)" };
     }
 
-    const assets = await fetchAllCorpAssets(structure.corporationId, accessToken);
-    if (!assets) {
+    const fetched = await fetchAllCorpAssets(structure.corporationId, accessToken);
+    if (!fetched) {
         log.warn("[stock-sync] 콥 자산 조회 실패, 구조물 스킵", {
             structureId: String(structure.structureId),
         });
+        scheduleNext(structure.structureId, null);
         return { ok: false, reason: "콥 자산 조회 실패" };
     }
+    const { assets, expiresAt } = fetched;
 
     const aggregated = aggregateHangarStock(structure.structureId, assets);
 
@@ -257,17 +325,22 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
         });
     }
 
+    scheduleNext(structure.structureId, expiresAt);
+
     log.info("[stock-sync] 동기화 완료", {
         structureId: String(structure.structureId),
         itemTypes: finalEntries.length,
         excludedCount: aggregated.length - trackedEntries.length,
+        nextSyncAt: new Date(nextSyncAt.get(String(structure.structureId))).toISOString(),
     });
 
     return { ok: true, itemTypes: finalEntries.length };
 }
 
 /**
- * 재고 동기화 cron 등록. TrackedStructure(active=true) 전부를 순회하며, 각
+ * 재고 동기화 tick 등록. 5분마다 TrackedStructure(active=true) 전부를 순회하되,
+ * 구조물별로 저장된 nextSyncAt(직전 동기화의 ESI Expires 헤더 기반)이 지나야 실제로
+ * 동기화한다 — 매시 정각 고정이 아니라 구조물마다 캐시가 실제로 갱신되는 시점에 맞춘다. 각
  * corporationId에 맞는 앵커 캐릭터를 EVE_ANCHOR_CHARIDS에서 찾아 사용한다 —
  * 구조물 소유 콥과 콥행어 소유 콥이 다를 수 있어(실측 확인됨) 앵커를
  * corporationId 기준으로 매칭한다.
@@ -280,16 +353,22 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
 export function startStockSyncScheduler({ prisma, tenantKey, signal, log }) {
     const logInstance = log ?? logger();
 
-    const task = cron.schedule(CRON_SCHEDULE, async () => {
+    const task = cron.schedule(TICK_SCHEDULE, async () => {
         if (signal?.aborted) return;
 
         const structures = await prisma.trackedStructure.findMany({ where: { active: true } });
         if (structures.length === 0) return;
 
         const anchors = parseAnchorCharIds(process.env.EVE_ANCHOR_CHARIDS);
+        const now = Date.now();
 
         for (const structure of structures) {
             if (signal?.aborted) return;
+            // 아직 Expires 기준 다음 동기화 시각이 안 됐으면 이번 tick은 건너뛴다.
+            // 맵에 없으면(최초 실행/재시작 직후) 0이라 바로 통과 — "모르니 일단 확인".
+            const due = nextSyncAt.get(String(structure.structureId)) ?? 0;
+            if (now < due) continue;
+
             const anchor = anchors.find((a) => a.corporationId === structure.corporationId);
             if (!anchor) {
                 logInstance.warn("[stock-sync] EVE_ANCHOR_CHARIDS에 해당 콥 앵커 없음", {
@@ -297,6 +376,7 @@ export function startStockSyncScheduler({ prisma, tenantKey, signal, log }) {
                     corporationId: structure.corporationId,
                     structureId: String(structure.structureId),
                 });
+                scheduleNext(structure.structureId, null);
                 continue;
             }
             try {
@@ -311,6 +391,7 @@ export function startStockSyncScheduler({ prisma, tenantKey, signal, log }) {
                     structureId: String(structure.structureId),
                     message: err?.message,
                 });
+                scheduleNext(structure.structureId, null);
             }
         }
     });
@@ -319,5 +400,7 @@ export function startStockSyncScheduler({ prisma, tenantKey, signal, log }) {
         signal.addEventListener("abort", () => task.stop(), { once: true });
     }
 
-    logInstance.info("[stock-sync] 재고 동기화 cron 등록 완료 (매시 정각)");
+    logInstance.info(
+        "[stock-sync] 재고 동기화 tick 등록 완료 (5분마다 점검, 구조물별 실제 동기화 주기는 ESI Expires 기준)"
+    );
 }
