@@ -19,17 +19,34 @@ const FALLBACK_INTERVAL_MS = 60 * 60 * 1000;
 // 캐시 경계 직후 살짝 여유를 둔다 — 시계 오차로 아직 안 갱신된 캐시를 또 받는 것 방지.
 const EXPIRY_BUFFER_MS = 10_000;
 const CORPSAG_FLAG_RE = /^CorpSAG[1-7]$/;
+const log = logger();
 
-// structureId(문자열) → 다음 동기화가 의미 있어지는 시각(epoch ms). 워커 프로세스가
-// 재시작되면 비워지는데, 그러면 다음 tick에서 바로 한 번 동기화하고(모르니 일단
-// 확인) 그때부터 진짜 Expires 기준으로 넘어간다 — 재시작 직후 잠깐 더 자주 도는 것
-// 외엔 문제 없다.
+// structureId(문자열) → 다음 동기화가 의미 있어지는 시각(epoch ms). 이 tick 루프가
+// 실제로 스케줄링에 쓰는 값은 이 인메모리 맵이다(워커 재시작되면 비워지는데, 그러면
+// 다음 tick에서 바로 한 번 동기화하고 그때부터 진짜 Expires 기준으로 넘어간다 —
+// 재시작 직후 잠깐 더 자주 도는 것 외엔 문제 없다).
 const nextSyncAt = new Map();
 
-function scheduleNext(structureId, expiresAtMs) {
+/**
+ * 다음 동기화 시각을 인메모리 맵(스케줄링에 실제로 쓰임)과 TrackedStructure.nextSyncAt
+ * 컬럼(프론트 "다음 동기화 N분 후" 표시용)에 같이 기록한다. DB 기록이 실패해도 인메모리
+ * 값은 이미 반영됐으니 동기화 스케줄 자체는 영향 없다 — 프론트 표시가 잠깐 안 맞을 뿐.
+ */
+async function scheduleNext(prisma, structureId, expiresAtMs) {
     const at =
         expiresAtMs != null ? expiresAtMs + EXPIRY_BUFFER_MS : Date.now() + FALLBACK_INTERVAL_MS;
     nextSyncAt.set(String(structureId), at);
+    try {
+        await prisma.trackedStructure.update({
+            where: { structureId },
+            data: { nextSyncAt: new Date(at) },
+        });
+    } catch (err) {
+        log.warn("[stock-sync] nextSyncAt DB 기록 실패(스케줄링 자체엔 영향 없음)", {
+            structureId: String(structureId),
+            message: err?.message,
+        });
+    }
 }
 
 function sleep(ms) {
@@ -216,7 +233,7 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
         log.warn("[stock-sync] 토큰 없음, 구조물 스킵", {
             structureId: String(structure.structureId),
         });
-        scheduleNext(structure.structureId, null);
+        await scheduleNext(prisma, structure.structureId, null);
         return { ok: false, reason: "토큰 없음(만료/미등록)" };
     }
 
@@ -225,7 +242,7 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
         log.warn("[stock-sync] 콥 자산 조회 실패, 구조물 스킵", {
             structureId: String(structure.structureId),
         });
-        scheduleNext(structure.structureId, null);
+        await scheduleNext(prisma, structure.structureId, null);
         return { ok: false, reason: "콥 자산 조회 실패" };
     }
     const { assets, expiresAt } = fetched;
@@ -325,7 +342,7 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
         });
     }
 
-    scheduleNext(structure.structureId, expiresAt);
+    await scheduleNext(prisma, structure.structureId, expiresAt);
 
     log.info("[stock-sync] 동기화 완료", {
         structureId: String(structure.structureId),
@@ -376,7 +393,7 @@ export function startStockSyncScheduler({ prisma, tenantKey, signal, log }) {
                     corporationId: structure.corporationId,
                     structureId: String(structure.structureId),
                 });
-                scheduleNext(structure.structureId, null);
+                await scheduleNext(prisma, structure.structureId, null);
                 continue;
             }
             try {
@@ -391,7 +408,7 @@ export function startStockSyncScheduler({ prisma, tenantKey, signal, log }) {
                     structureId: String(structure.structureId),
                     message: err?.message,
                 });
-                scheduleNext(structure.structureId, null);
+                await scheduleNext(prisma, structure.structureId, null);
             }
         }
     });
