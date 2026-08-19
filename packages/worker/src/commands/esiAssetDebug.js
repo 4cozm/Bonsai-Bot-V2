@@ -299,6 +299,37 @@ async function fetchTypeInfoBatch(typeIds) {
 }
 
 /**
+ * GET /universe/types/{id}/?language=en — 영문 타입명만 따로 조회한다. 표시는
+ * 계속 한글(fetchTypeInfoBatch)로 하되, 검색 매칭에서만 영문명도 같이 본다 —
+ * 실측 확인됨: 이 콥원들은 영문 함선명(예: "Ishtar")으로 검색하는데, 한글
+ * language=ko 응답("이슈타르")만으로 매칭하면 항상 0건이 나온다. 검색어가
+ * 있을 때만 호출한다(불필요한 ESI 호출을 늘리지 않기 위해 — 표시용 조회와는
+ * 별도 목적이라 fetchTypeInfoBatch 자체를 이중 조회로 바꾸지 않는다).
+ */
+async function fetchTypeNamesEn(typeIds) {
+    const unique = [...new Set(typeIds)];
+    const results = await Promise.all(
+        unique.map(async (id) => {
+            try {
+                const res = await fetch(
+                    `${ESI_BASE}/universe/types/${id}/?datasource=tranquility&language=en`
+                );
+                if (!res.ok) return null;
+                const d = await res.json();
+                return d.name;
+            } catch {
+                return null;
+            }
+        })
+    );
+    const byId = {};
+    unique.forEach((id, i) => {
+        if (results[i]) byId[id] = results[i];
+    });
+    return byId;
+}
+
+/**
  * GET /characters/{id}/ — 공개 엔드포인트(인증 불필요). characterId로 소속 콥을
  * 알아낸다. 캐릭터 옵션으로 앵커를 갈아끼울 때, "이 캐릭터가 실제로 어느 콥
  * 소속인지"를 env의 EVE_ANCHOR_CHARIDS에 기대지 않고 직접 확인하기 위함이다
@@ -640,9 +671,14 @@ export default {
         const nameEligibleItemIds = officeAndHangarAssets
             .filter((a) => a.is_singleton)
             .map((a) => a.item_id);
-        const [officeTypeInfo, officeNameResult] = await Promise.all([
+        const [officeTypeInfo, officeNameResult, officeTypeNamesEn] = await Promise.all([
             fetchTypeInfoBatch(officeAndHangarAssets.map((a) => a.type_id)),
             fetchAssetNames(corporationId, accessToken, nameEligibleItemIds),
+            // 검색어가 있을 때만 영문명도 조회한다 — 표시(officeTypeInfo)는 계속
+            // 한글, 매칭 대상만 넓힌다.
+            searchNeedle
+                ? fetchTypeNamesEn(officeAndHangarAssets.map((a) => a.type_id))
+                : Promise.resolve({}),
         ]);
         const officeCustomNames = officeNameResult.byId;
         const officeNameErrorNote =
@@ -676,14 +712,22 @@ export default {
                       ? `${typeName} (기본값 그대로)`
                       : `${typeName} · 커스텀명:"${customName}"`;
             }
-            return { asset: a, typeName, nameLabel };
+            const nameEn = officeTypeNamesEn[a.type_id] ?? "";
+            return { asset: a, typeName, nameLabel, nameEn };
         });
 
-        // 검색어가 있으면 타입명/커스텀명 부분일치(대소문자 무시)로 좁힌다 —
-        // 건수가 많아 Discord 필드 한도(1024자)에 다 안 들어갈 때, 잘려서 못 보는
-        // 대신 원하는 것만 걸러서 본다.
+        // 검색어가 있으면 타입명(한글 표시명 + 영문명)/커스텀명 부분일치(대소문자
+        // 무시)로 좁힌다 — 건수가 많아 Discord 필드 한도(1024자)에 다 안 들어갈 때,
+        // 잘려서 못 보는 대신 원하는 것만 걸러서 본다. 영문명도 같이 보는 이유:
+        // 표시는 language=ko라 "이슈타르"처럼 한글로 나오는데, 콥원들은 "Ishtar"처럼
+        // 영문으로 검색하는 경우가 많아 한글 라벨만 매칭하면 실제로 있어도 0건으로
+        // 나온다(실측으로 확인됨).
         const officeMatched = searchNeedle
-            ? officeLabeled.filter((l) => l.nameLabel.toLowerCase().includes(searchNeedle))
+            ? officeLabeled.filter(
+                  (l) =>
+                      l.nameLabel.toLowerCase().includes(searchNeedle) ||
+                      l.nameEn.toLowerCase().includes(searchNeedle)
+              )
             : officeLabeled;
 
         const officeFlagCounts = {};

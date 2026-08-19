@@ -270,6 +270,62 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(officeScan.value).not.toContain("Loki");
     });
 
+    // 회귀 테스트: 표시는 language=ko라 타입명이 "이슈타르"처럼 한글로 나오는데,
+    // 실제로 콥원들은 "Ishtar"처럼 영문으로 검색한다 — 한글 라벨만 매칭하면
+    // 진짜 있는데도 0건으로 나오는 문제를 실측으로 겪고 고쳤다.
+    test("검색 옵션: 표시는 한글이어도 영문 타입명으로 검색하면 매칭된다", async () => {
+        const PACKAGED_ISHTAR_ID = 601;
+        const assets = [
+            ...buildNestedAssets(),
+            {
+                item_id: PACKAGED_ISHTAR_ID,
+                type_id: 12005, // Ishtar
+                location_id: OFFICE_ITEM_ID,
+                location_type: "item",
+                location_flag: "CorpSAG5",
+                is_singleton: false,
+                quantity: 1,
+            },
+        ];
+        global.fetch = jest.fn(async (url) => {
+            const u = String(url);
+            if (u.includes("/assets/?")) {
+                return { ok: true, headers: { get: () => "1" }, json: async () => assets };
+            }
+            if (u.includes("/divisions/")) {
+                return { ok: true, json: async () => ({ hangar: [] }) };
+            }
+            if (u.includes("/assets/names/")) {
+                return { ok: true, json: async () => [] };
+            }
+            if (u.includes("/universe/types/12005/") && u.includes("language=ko")) {
+                return { ok: true, json: async () => ({ name: "이슈타르", group_id: 26 }) };
+            }
+            if (u.includes("/universe/types/12005/") && u.includes("language=en")) {
+                return { ok: true, json: async () => ({ name: "Ishtar", group_id: 26 }) };
+            }
+            if (u.includes("/universe/types/")) {
+                return { ok: true, json: async () => ({ name: "Fortizar", group_id: 1657 }) };
+            }
+            return { ok: false, status: 404, text: async () => "" };
+        });
+        const ctx = { prisma: {} };
+        const envelope = {
+            meta: { discordUserId: ALLOWED_DISCORD_ID },
+            args: JSON.stringify({ 검색: "Ishtar" }),
+        };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        expect(officeScan.name).toContain("1건");
+        expect(officeScan.value).toContain(`item_id=${PACKAGED_ISHTAR_ID}`);
+        expect(officeScan.value).toContain("이슈타르"); // 표시 라벨은 여전히 한글
+    });
+
     test("검색 옵션: 매칭되는 게 없으면 0건이라고 명시한다", async () => {
         mockFetchSequence({ assets: buildNestedAssets() });
         const ctx = { prisma: {} };
