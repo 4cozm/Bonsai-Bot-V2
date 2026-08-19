@@ -12,14 +12,16 @@ describe("worker/esi/getAssetNames", () => {
     test("accessToken 없음 → 빈 맵, fetch 안 부른다", async () => {
         globalThis.fetch = jest.fn();
         const result = await getAssetNames("", 12345, [1, 2]);
-        expect(result.size).toBe(0);
+        expect(result.names.size).toBe(0);
+        expect(result.hadFailures).toBe(false);
         expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
     test("itemIds 비어있음 → 빈 맵, fetch 안 부른다", async () => {
         globalThis.fetch = jest.fn();
         const result = await getAssetNames("token", 12345, []);
-        expect(result.size).toBe(0);
+        expect(result.names.size).toBe(0);
+        expect(result.hadFailures).toBe(false);
         expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
@@ -35,8 +37,9 @@ describe("worker/esi/getAssetNames", () => {
 
         const result = await getAssetNames("bearer-token", 98765, [1, 2]);
 
-        expect(result.get(1)).toBe("드론");
-        expect(result.get(2)).toBe("탄약");
+        expect(result.names.get(1)).toBe("드론");
+        expect(result.names.get(2)).toBe("탄약");
+        expect(result.hadFailures).toBe(false);
         expect(globalThis.fetch).toHaveBeenCalledWith(
             "https://esi.evetech.net/latest/corporations/98765/assets/names/",
             expect.objectContaining({
@@ -53,7 +56,8 @@ describe("worker/esi/getAssetNames", () => {
             json: () => Promise.resolve([{ item_id: 1, name: "" }]),
         });
         const result = await getAssetNames("token", 12345, [1]);
-        expect(result.has(1)).toBe(false);
+        expect(result.names.has(1)).toBe(false);
+        expect(result.hadFailures).toBe(false);
     });
 
     test("200개 넘으면 여러 번 청크로 나눠 호출하고 결과를 합친다", async () => {
@@ -70,12 +74,13 @@ describe("worker/esi/getAssetNames", () => {
         const result = await getAssetNames("token", 12345, ids);
 
         expect(globalThis.fetch).toHaveBeenCalledTimes(2);
-        expect(result.size).toBe(250);
-        expect(result.get(1)).toBe("name-1");
-        expect(result.get(250)).toBe("name-250");
+        expect(result.names.size).toBe(250);
+        expect(result.names.get(1)).toBe("name-1");
+        expect(result.names.get(250)).toBe("name-250");
+        expect(result.hadFailures).toBe(false);
     });
 
-    test("한 청크가 재시도까지 다 실패해도 나머지 청크 결과는 유지한다", async () => {
+    test("한 청크가 재시도까지 다 실패해도 나머지 청크 결과는 유지한다 — hadFailures도 켜진다", async () => {
         globalThis.fetch = jest.fn().mockImplementation((url, opts) => {
             const batch = JSON.parse(opts.body);
             // id=1이 섞인 청크(1~200)는 모든 시도가 실패, 나머지 청크는 항상 성공.
@@ -92,11 +97,14 @@ describe("worker/esi/getAssetNames", () => {
 
         const result = await getAssetNames("token", 12345, ids);
 
-        expect(result.has(1)).toBe(false);
-        expect(result.get(250)).toBe("name-250");
-        expect(result.size).toBe(50);
+        expect(result.names.has(1)).toBe(false);
+        expect(result.names.get(250)).toBe("name-250");
+        expect(result.names.size).toBe(50);
         // 실패 청크: 최대 시도 횟수(3)만큼, 성공 청크: 1번 → 총 4번.
         expect(globalThis.fetch).toHaveBeenCalledTimes(4);
+        // 호출부(syncStructure)가 이걸 보고 이번 사이클의 유령 정리를 건너뛴다 —
+        // 부분 실패를 조용히 삼키지 않고 신호로 남긴다.
+        expect(result.hadFailures).toBe(true);
     });
 
     test("첫 시도가 실패해도 재시도가 성공하면 결과에 포함된다 — 실제로 겪은 버그의 핵심", async () => {
@@ -112,8 +120,10 @@ describe("worker/esi/getAssetNames", () => {
 
         const result = await getAssetNames("token", 12345, [1]);
 
-        expect(result.get(1)).toBe("재시도로 성공");
+        expect(result.names.get(1)).toBe("재시도로 성공");
         expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+        // 결국 성공했으니 실패로 안 남는다.
+        expect(result.hadFailures).toBe(false);
     });
 
     // 회귀 테스트: 재시도 1번(총 2번 시도)이던 시절엔 이 케이스에서 이름이
@@ -132,14 +142,16 @@ describe("worker/esi/getAssetNames", () => {
 
         const result = await getAssetNames("token", 12345, [1]);
 
-        expect(result.get(1)).toBe("세 번째 시도로 성공");
+        expect(result.names.get(1)).toBe("세 번째 시도로 성공");
         expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+        expect(result.hadFailures).toBe(false);
     });
 
-    test("fetch가 재시도까지 계속 throw해도 예외를 던지지 않고 빈 결과로 처리한다", async () => {
+    test("fetch가 재시도까지 계속 throw해도 예외를 던지지 않고 빈 결과로 처리한다 — hadFailures가 켜진다", async () => {
         globalThis.fetch = jest.fn().mockRejectedValue(new Error("network error"));
         const result = await getAssetNames("token", 12345, [1]);
-        expect(result.size).toBe(0);
+        expect(result.names.size).toBe(0);
         expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+        expect(result.hadFailures).toBe(true);
     });
 });

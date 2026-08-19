@@ -144,22 +144,25 @@ export function createStockRouter() {
         }
 
         const since = new Date(Date.now() - BURN_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-        const [logsRaw, targets] = await Promise.all([
+        // division/container 필터를 SQL WHERE로 직접 내린다 — 예전엔 30일치 전체를
+        // 다 긁어온 뒤 JS에서 걸러냈는데, 아이템 수가 많은 구조물(실측: 30일치
+        // 17만 행)에서 특정 행어만 볼 때도 항상 전체를 읽어야 해서 느렸다(EXPLAIN
+        // ANALYZE로 확인: SQL 자체는 1.5초로 인덱스 잘 타지만, 그 많은 행을 Node로
+        // 옮겨서 그룹핑·burn rate 계산까지 하는 게 진짜 병목). division을 주면
+        // (structureId, division, sampledAt) 인덱스를 그대로 타서 filesort도
+        // 없어질 가능성이 높다 — 정렬 키가 이미 인덱스 순서와 맞기 때문.
+        const [logs, targets] = await Promise.all([
             prisma.stockLog.findMany({
-                where: { structureId, sampledAt: { gte: since } },
+                where: {
+                    structureId,
+                    sampledAt: { gte: since },
+                    ...(division != null && { division }),
+                    ...(container != null && { containerName: container }),
+                },
                 orderBy: { sampledAt: "asc" },
             }),
             prisma.stockTarget.findMany({ where: { structureId } }),
         ]);
-
-        const logs =
-            division == null && container == null
-                ? logsRaw
-                : logsRaw.filter(
-                      (l) =>
-                          (division == null || l.division === division) &&
-                          (container == null || l.containerName === container)
-                  );
 
         const targetByKey = new Map(
             targets.map((t) => [nameKey(t.typeId, t.itemName), t.targetQty])

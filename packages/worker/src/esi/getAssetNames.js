@@ -59,14 +59,18 @@ async function withRetry(fn) {
  * @param {string} accessToken - Bearer token
  * @param {number} corporationId
  * @param {number[]} itemIds
- * @returns {Promise<Map<number, string>>} item_id → name. 재시도까지 실패한 청크만
- *          조용히 빠진다(부분 성공 허용 — 컨테이너 이름 몇 개 놓쳐도 그 아이템들이
- *          "이름 없음(미추적)"으로 안전하게 처리될 뿐, 전체 동기화를 막을 이유는 없다).
+ * @returns {Promise<{names: Map<number, string>, hadFailures: boolean}>} names는
+ *          item_id → name. 재시도까지 실패한 청크는 그 안의 아이템들만 조용히 빠지고
+ *          (부분 성공 허용 — 다른 청크는 그대로 씀) 대신 hadFailures를 true로 켠다.
+ *          호출부(syncStructure)는 이걸 보고 "이름을 못 구한 게 있으니, 이번 사이클에
+ *          이름이 비어 보이는 함선의 옛 기록을 지우면 안 된다"를 판단한다 — 안 그러면
+ *          일시적 조회 실패 하나가 실제로 존재하는 함선의 30일 이력을 영구 삭제하는
+ *          사고로 이어질 수 있다(실제로 겪음).
  */
 export async function getAssetNames(accessToken, corporationId, itemIds) {
     const token = String(accessToken ?? "").trim();
     const ids = [...new Set(itemIds)];
-    if (!token || ids.length === 0) return new Map();
+    if (!token || ids.length === 0) return { names: new Map(), hadFailures: false };
 
     const url = `${ESI_ASSET_NAMES_URL}/${corporationId}/assets/names/`;
     const batches = chunk(ids, IDS_PER_REQUEST);
@@ -91,7 +95,8 @@ export async function getAssetNames(accessToken, corporationId, itemIds) {
             };
 
             try {
-                return await withRetry(fetchOnce);
+                const rows = await withRetry(fetchOnce);
+                return { rows, failed: false };
             } catch (err) {
                 log.warn("[esi:assetNames] 요청 실패(재시도 포함)", {
                     corporationId,
@@ -99,14 +104,18 @@ export async function getAssetNames(accessToken, corporationId, itemIds) {
                     batchSize: batchIds.length,
                     message: err?.status == null ? (err?.message ?? String(err)) : undefined,
                 });
-                return [];
+                return { rows: [], failed: true };
             }
         })
     );
 
-    const byId = new Map();
-    for (const row of results.flat()) {
-        if (row?.item_id != null && row?.name) byId.set(row.item_id, row.name);
+    const names = new Map();
+    let hadFailures = false;
+    for (const { rows, failed } of results) {
+        if (failed) hadFailures = true;
+        for (const row of rows) {
+            if (row?.item_id != null && row?.name) names.set(row.item_id, row.name);
+        }
     }
-    return byId;
+    return { names, hadFailures };
 }

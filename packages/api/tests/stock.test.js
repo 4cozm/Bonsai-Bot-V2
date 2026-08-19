@@ -282,10 +282,26 @@ describe("api/routes/stock", () => {
                 .fn()
                 .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
             const t1 = new Date("2026-08-13T10:00:00.000Z");
-            const stockLogFindMany = jest.fn().mockResolvedValue([
+            const allRows = [
                 { typeId: 100, quantity: 5, sampledAt: t1, division: 3, containerName: null },
                 { typeId: 100, quantity: 12, sampledAt: t1, division: 4, containerName: "드론" },
-            ]);
+            ];
+            // division/container 필터가 이제 SQL where로 내려가므로(실 MySQL이 걸러서
+            // 반환) 목도 where 인자를 보고 같은 방식으로 걸러야 한다 — 안 그러면
+            // "라우트가 필터를 안 거는데도 우연히 맞는 값이 나오는" 거짓양성이 생긴다.
+            const stockLogFindMany = jest
+                .fn()
+                .mockImplementation((args) =>
+                    Promise.resolve(
+                        allRows.filter(
+                            (r) =>
+                                (args?.where?.division == null ||
+                                    r.division === args.where.division) &&
+                                (args?.where?.containerName == null ||
+                                    r.containerName === args.where.containerName)
+                        )
+                    )
+                );
             mockGetPrisma.mockReturnValue({
                 trackedStructure: { findUnique },
                 stockLog: { findMany: stockLogFindMany },
@@ -344,10 +360,23 @@ describe("api/routes/stock", () => {
                 .fn()
                 .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
             const t1 = new Date("2026-08-13T10:00:00.000Z");
-            const stockLogFindMany = jest.fn().mockResolvedValue([
+            const allRows = [
                 { typeId: 100, quantity: 5, sampledAt: t1, division: 3, containerName: null },
                 { typeId: 100, quantity: 12, sampledAt: t1, division: 4, containerName: "드론" },
-            ]);
+            ];
+            const stockLogFindMany = jest
+                .fn()
+                .mockImplementation((args) =>
+                    Promise.resolve(
+                        allRows.filter(
+                            (r) =>
+                                (args?.where?.division == null ||
+                                    r.division === args.where.division) &&
+                                (args?.where?.containerName == null ||
+                                    r.containerName === args.where.containerName)
+                        )
+                    )
+                );
             mockGetPrisma.mockReturnValue({
                 trackedStructure: { findUnique },
                 stockLog: { findMany: stockLogFindMany },
@@ -364,6 +393,68 @@ describe("api/routes/stock", () => {
 
                 expect(body.items).toHaveLength(1);
                 expect(body.items[0]).toMatchObject({ typeId: 100, stocked: 12 });
+            } finally {
+                server.close();
+            }
+        });
+
+        // 회귀 테스트: division/container 필터를 30일치 전체를 긁은 뒤 JS에서
+        // 거르지 않고 SQL where로 직접 내려서, 아이템이 많은 구조물에서 특정
+        // 행어만 볼 때 DB가 애초에 좁혀서 반환하게 한다(성능 문제 실측 후 개선).
+        test("division/container 필터가 stockLog.findMany where절에 그대로 실린다", async () => {
+            const structureId = 1051025995560n;
+            const findUnique = jest
+                .fn()
+                .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
+            const stockLogFindMany = jest.fn().mockResolvedValue([]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockLog: { findMany: stockLogFindMany },
+                stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                await fetch(
+                    `${baseUrl}/v1/stock/structures/${structureId}/items?division=4&container=드론`,
+                    { headers: AUTH_HEADERS }
+                );
+
+                expect(stockLogFindMany).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        where: expect.objectContaining({
+                            structureId,
+                            division: 4,
+                            containerName: "드론",
+                        }),
+                    })
+                );
+            } finally {
+                server.close();
+            }
+        });
+
+        test("필터가 없으면 stockLog.findMany where절에 division/containerName이 안 실린다", async () => {
+            const structureId = 1051025995560n;
+            const findUnique = jest
+                .fn()
+                .mockResolvedValue({ structureId, displayName: "SAVE CAT" });
+            const stockLogFindMany = jest.fn().mockResolvedValue([]);
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique },
+                stockLog: { findMany: stockLogFindMany },
+                stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            });
+
+            const { server, baseUrl } = startTestApp();
+            try {
+                await fetch(`${baseUrl}/v1/stock/structures/${structureId}/items`, {
+                    headers: AUTH_HEADERS,
+                });
+
+                const call = stockLogFindMany.mock.calls[0][0];
+                expect(call.where).not.toHaveProperty("division");
+                expect(call.where).not.toHaveProperty("containerName");
             } finally {
                 server.close();
             }
