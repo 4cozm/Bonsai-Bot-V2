@@ -21,21 +21,35 @@ function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 최대 재시도 횟수(원 시도 포함하면 총 3번). 1번만 재시도하던 시절 실측으로 겪은
+// 문제: ESI가 420/429(요청 제한)로 두 번 연속 실패하면 그 청크의 함선 전부가
+// "이름 없음"으로 떨어졌다 — 같은 콥에 다른 진단/조회가 동시에 몰리면(예: 관리자가
+// /자산진단을 무겁게 여러 번 돌리는 중) 한 번의 재시도로는 그 요청 제한 구간을
+// 못 벗어나는 경우가 실제로 있었다. 시도마다 대기 시간도 늘려서(선형 백오프)
+// 같은 순간에 또 걸릴 확률을 낮춘다.
+const MAX_ATTEMPTS = 3;
+
 /**
- * ESI가 일시적으로 흔들릴 때(네트워크 순간 끊김, 5xx, 420/429 요청 제한) 한 번은 잠깐
- * 쉬었다 다시 시도한다 — 프론트 eveTypes.js의 withRetry와 같은 패턴. 이게 없어서 실제로
- * 겪은 문제: 배치 하나가 우연히 실패하면 그 안의 함선 전부가 그 동기화 사이클에서
- * "이름 없음"으로 떨어져 커스텀명 없는 다른 함선들과 typeId 기준으로 뭉쳐 보였다 —
- * 인게임에서는 전부 이름이 붙어 있는데도. 다음 시간 정각 동기화 때 우연히 성공하면
- * 다시 정상으로 보여서, 원인 파악 없이는 "가끔 이름이 사라진다"로만 보였다.
+ * ESI가 일시적으로 흔들릴 때(네트워크 순간 끊김, 5xx, 420/429 요청 제한) 잠깐씩 쉬었다
+ * 다시 시도한다 — 프론트 eveTypes.js의 withRetry와 같은 패턴. 이게 없어서 실제로 겪은
+ * 문제: 배치 하나가 실패하면 그 안의 함선 전부가 그 동기화 사이클에서 "이름 없음"으로
+ * 떨어져 커스텀명 없는 다른 함선들과 typeId 기준으로 뭉쳐 보였다 — 인게임에서는 전부
+ * 이름이 붙어 있는데도. 다음 시간 정각 동기화 때 우연히 성공하면 다시 정상으로 보여서,
+ * 원인 파악 없이는 "가끔 이름이 사라진다"로만 보였다.
  */
 async function withRetry(fn) {
-    try {
-        return await fn();
-    } catch (err) {
-        await sleep(400 + Math.random() * 400);
-        return fn();
+    let lastErr;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+            return await fn();
+        } catch (err) {
+            lastErr = err;
+            if (attempt < MAX_ATTEMPTS) {
+                await sleep(attempt * (400 + Math.random() * 400));
+            }
+        }
     }
+    throw lastErr;
 }
 
 /**

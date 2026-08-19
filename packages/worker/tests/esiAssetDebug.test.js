@@ -326,6 +326,77 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(officeScan.value).toContain("이슈타르"); // 표시 라벨은 여전히 한글
     });
 
+    // 회귀 테스트: 실측으로 겪은 버그 — 커스텀명에 밑줄(_)이 하나씩만 있어도, 한
+    // 필드 안에 그런 줄이 여러 개 섞이면 Discord가 줄을 넘나들며 밑줄들을 기울임
+    // 마크다운 시작/끝으로 짝지어 먹어버려서 실제로 있는 밑줄이 화면에서 사라져
+    // 보였다("이_드론용"이 "이드론용"으로 보임). 밑줄 앞에 백슬래시를 붙여
+    // 이스케이프하면 Discord가 문자 그대로 보여준다.
+    test("커스텀명에 마크다운 특수문자(밑줄)가 있으면 이스케이프해서 보여준다", async () => {
+        const SHIP_A_ID = 701;
+        const SHIP_B_ID = 702;
+        const assets = [
+            ...buildNestedAssets(),
+            {
+                item_id: SHIP_A_ID,
+                type_id: 12005,
+                location_id: OFFICE_ITEM_ID,
+                location_type: "item",
+                location_flag: "CorpSAG5",
+                is_singleton: true,
+                quantity: 1,
+            },
+            {
+                item_id: SHIP_B_ID,
+                type_id: 12005,
+                location_id: OFFICE_ITEM_ID,
+                location_type: "item",
+                location_flag: "CorpSAG5",
+                is_singleton: true,
+                quantity: 1,
+            },
+        ];
+        global.fetch = jest.fn(async (url, opts) => {
+            const u = String(url);
+            if (u.includes("/assets/?")) {
+                return { ok: true, headers: { get: () => "1" }, json: async () => assets };
+            }
+            if (u.includes("/divisions/")) {
+                return { ok: true, json: async () => ({ hangar: [] }) };
+            }
+            if (u.includes("/assets/names/")) {
+                const ids = JSON.parse(opts.body);
+                const rows = [];
+                if (ids.includes(SHIP_A_ID)) rows.push({ item_id: SHIP_A_ID, name: "이_드론용" });
+                if (ids.includes(SHIP_B_ID)) rows.push({ item_id: SHIP_B_ID, name: "이_드론용2" });
+                return { ok: true, json: async () => rows };
+            }
+            if (u.includes("/universe/types/12005/")) {
+                return { ok: true, json: async () => ({ name: "이슈타르", group_id: 26 }) };
+            }
+            return { ok: false, status: 404, text: async () => "" };
+        });
+        const ctx = { prisma: {} };
+        const envelope = {
+            meta: { discordUserId: ALLOWED_DISCORD_ID },
+            args: JSON.stringify({ 검색: "이슈타르" }),
+        };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        expect(officeScan.name).toContain("2건");
+        // 밑줄 앞에 백슬래시가 붙어 이스케이프된 형태로 나와야 한다.
+        expect(officeScan.value).toContain('이\\_드론용2"');
+        expect(officeScan.value).toContain('이\\_드론용"');
+        // 이스케이프 안 된 원본 그대로(바로 뒤에 닫는 따옴표)는 없어야 한다 —
+        // "이_드론용2" 안에 "이_드론용"이 부분 문자열로 겹쳐서, 딱 그 형태(뒤에
+        // 바로 "가 오는)로 정확히 매칭되는지를 확인해야 이스케이프 여부를 가릴 수 있다.
+        expect(officeScan.value).not.toContain('이_드론용"');
+    });
+
     test("검색 옵션: 매칭되는 게 없으면 0건이라고 명시한다", async () => {
         mockFetchSequence({ assets: buildNestedAssets() });
         const ctx = { prisma: {} };
