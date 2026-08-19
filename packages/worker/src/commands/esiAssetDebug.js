@@ -739,11 +739,15 @@ export default {
             Object.entries(officeFlagCounts)
                 .map(([flag, count]) => `${labelFlag(flag, hangarNames)}: ${count}건`)
                 .join(", ") || "0건";
+        // 검색어로 좁혔을 때는 행어/위치가 어차피 다 같으니(필터로 이미 고정됨)
+        // 그 정보를 빼고 이름만 보여준다 — 안 그러면 한 줄이 길어서 몇 건 안 되는
+        // 검색 결과도 Discord 필드 한도(950자)에 다 못 들어가는 경우가 있었다.
         const officeLines =
             officeMatched
-                .map(
-                    ({ asset: a, nameLabel }) =>
-                        `${labelFlag(a.location_flag, hangarNames)} · ${nameLabel} · item_id=${a.item_id} · location_id=${a.location_id} · 수량${a.quantity}`
+                .map(({ asset: a, nameLabel }) =>
+                    searchNeedle
+                        ? `${nameLabel} · item_id=${a.item_id}`
+                        : `${labelFlag(a.location_flag, hangarNames)} · ${nameLabel} · item_id=${a.item_id} · location_id=${a.location_id} · 수량${a.quantity}`
                 )
                 .join("\n") ||
             (searchNeedle
