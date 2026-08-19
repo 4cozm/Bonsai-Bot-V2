@@ -327,6 +327,46 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
         });
     }
 
+    // 위 정리는 일부러 itemName이 있는 것만 본다 — 그걸 그냥 풀어버리면 탄약/모듈처럼
+    // 원래부터 이름이 없는 일반 소모품(목표 안 잡아둔 게 흔함)까지 "매치 안 됨"으로
+    // 걸려서 매 사이클 지워질 위험이 있다. 대신 "이 구조물에서 이름 붙은 채로 한 번
+    // 이상 나타난 적 있는 typeId"만 별도로 좁혀서, 그 typeId의 itemName=null 기록도
+    // 같은 방식으로 정리한다 — 조립 안 된(포장) 함선이 나중에 조립되면 그 typeId는
+    // 더 이상 itemName=null로 안 나타나는데, 옛 null 기록이 "이 typeId만의 마지막
+    // 관측값"으로 30일 내내 유령처럼 남아있던 문제(실측: 조립된 지 3일 지나서도 미조립
+    // 1대가 계속 잡힘)를 막는다. 일반 소모품 typeId는 이름 붙은 적이 아예 없어서 이
+    // 집합에 자동으로 안 걸린다.
+    const shipTypeIds = new Set([
+        ...existingNamedCombos.map((c) => c.typeId),
+        ...finalEntries.filter((e) => e.itemName != null).map((e) => e.typeId),
+    ]);
+    if (shipTypeIds.size > 0) {
+        const existingNullCombos = await prisma.stockLog.findMany({
+            where: {
+                structureId: structure.structureId,
+                itemName: null,
+                typeId: { in: [...shipTypeIds] },
+            },
+            select: { typeId: true },
+            distinct: ["typeId"],
+        });
+        const currentNullTypeIds = new Set(
+            finalEntries.filter((e) => e.itemName == null).map((e) => e.typeId)
+        );
+        const staleNullTypeIds = existingNullCombos
+            .map((c) => c.typeId)
+            .filter((typeId) => !currentNullTypeIds.has(typeId));
+        if (staleNullTypeIds.length > 0) {
+            await prisma.stockLog.deleteMany({
+                where: {
+                    structureId: structure.structureId,
+                    itemName: null,
+                    typeId: { in: staleNullTypeIds },
+                },
+            });
+        }
+    }
+
     const sampledAt = new Date();
     if (finalEntries.length > 0) {
         await prisma.stockLog.createMany({
