@@ -272,6 +272,62 @@ describe("stockSyncScheduler/aggregateHangarStock", () => {
         });
     });
 
+    // 회귀 테스트: 실제로 겪은 버그 — 행어 안 함선에 장착된 모듈/화물(HiSlot·Cargo
+    // 등)도 is_singleton:true라 예전엔 itemId로 잡혀서 getAssetNames 조회 대상에
+    // 섞여 들어갔다. ESI는 이름 지정 불가 아이템이 하나라도 섞인 배치를 통째로
+    // 404로 거부해서, 같은 청크에 우연히 묶인 다른 함선들까지 전부 이름을 잃었다
+    // (재시도해도 똑같은 요청이라 안 고쳐짐 — 실제 프로덕션에서 이렇게 겪음). 함선
+    // 자신은 정상 집계되고, 장착된 모듈/화물은 집계 결과에 아예 안 잡혀야 한다.
+    test("행어 안 함선에 장착된 모듈/화물은 집계 대상에서 빠진다(포함되면 이름 조회 배치가 오염됨)", () => {
+        const SHIP_ID = 9001;
+        const FITTED_GUN_ID = 9002;
+        const CARGO_AMMO_ID = 9003;
+        const assets = [
+            {
+                item_id: SHIP_ID,
+                type_id: 22456, // Sabre
+                location_id: STRUCTURE_ID,
+                location_flag: "CorpSAG3",
+                quantity: 1,
+                is_singleton: true,
+            },
+            {
+                // 장착된 무기 — is_singleton:true(개별 장비 인스턴스)지만 이름 지정 불가.
+                item_id: FITTED_GUN_ID,
+                type_id: 2929,
+                location_id: SHIP_ID,
+                location_flag: "HiSlot0",
+                quantity: 1,
+                is_singleton: true,
+            },
+            {
+                // 화물칸 탄약 — 스택형(is_singleton:false)이지만 위치가 함선 내부.
+                item_id: CARGO_AMMO_ID,
+                type_id: 12608,
+                location_id: SHIP_ID,
+                location_flag: "Cargo",
+                quantity: 50,
+                is_singleton: false,
+            },
+        ];
+
+        const result = aggregateHangarStock(STRUCTURE_ID, assets);
+
+        // 함선 자신은 정상적으로 잡힌다.
+        expect(find(result, 22456)).toEqual({
+            typeId: 22456,
+            division: 3,
+            containerItemId: null,
+            quantity: 1,
+            itemId: SHIP_ID,
+        });
+        // 장착 모듈/화물은 결과에 아예 없어야 한다 — typeId 기준으로도, item_id
+        // 기준으로도 어디에도 안 잡혀야(이름 조회 대상으로 새 나가지 않아야) 한다.
+        expect(find(result, 2929)).toBeUndefined();
+        expect(find(result, 12608)).toBeUndefined();
+        expect(result.some((r) => r.itemId === FITTED_GUN_ID)).toBe(false);
+    });
+
     test("구조물 자체 피팅(HiSlot 등)은 division 상속 없이 전부 무시한다", () => {
         const FITTED_MODULE_ID = 777;
         const assets = [
@@ -771,6 +827,63 @@ describe("stockSyncScheduler/syncStructure", () => {
                 OR: [{ typeId: 22456, itemName: "애태클" }],
             },
         });
+    });
+
+    // 회귀 테스트: 실제로 겪은 사고 — 이름 조회가 일시적으로 실패해서 진짜 존재하는
+    // 함선이 이번 사이클에만 itemName:null로 잡히면, 예전 정리 로직은 "이번엔 안
+    // 나타났다"고 오판해서 그 함선의 30일 이력을 영구 삭제했다. getAssetNames가
+    // hadFailures를 알려주면 그 사이클은 정리 자체를 건너뛰어야 한다 — 위 테스트와
+    // 완전히 같은 "옛 이름 기록이 이번엔 안 보임" 상황이지만, 이번엔 이름 조회
+    // 자체가 실패한 게 원인이라 지우면 안 된다.
+    test("이름 조회가 실패한 사이클엔 유령 정리를 건너뛴다(진짜 함선 이력을 잘못 지우지 않기 위해)", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        const SHIP_ID = 7001;
+        global.fetch = jest.fn(async (url) => {
+            if (String(url).includes("/assets/names/")) {
+                // 재시도까지 계속 실패 — 이 함선의 이름을 이번엔 못 구함.
+                return { ok: false, status: 500 };
+            }
+            return {
+                ok: true,
+                headers: { get: () => "1" },
+                json: async () => [
+                    {
+                        item_id: SHIP_ID,
+                        type_id: 22456,
+                        location_id: STRUCTURE_ID,
+                        location_flag: "CorpSAG3",
+                        quantity: 1,
+                        is_singleton: true,
+                    },
+                ],
+            };
+        });
+        const deleteMany = jest.fn();
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                // 예전에 정상적으로 붙어 있던 이름 — 이번 사이클엔 이름 조회 실패로
+                // itemName:null로 동기화되니, 정리 로직 관점에선 "이번엔 없다"로
+                // 보일 수 있는 상황이다.
+                findMany: jest.fn().mockResolvedValue([{ typeId: 22456, itemName: "에태클" }]),
+                deleteMany,
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        // 이름 조회가 실패했다는 warn은 남기되, 파괴적인 정리(deleteMany)는 전혀
+        // 호출되지 않아야 한다 — 다음(성공하는) 사이클에서 지워도 늦지 않다.
+        expect(deleteMany).not.toHaveBeenCalled();
+        expect(log.warn).toHaveBeenCalled();
     });
 
     test("목표가 있는 함선은 옛 기록을 안 지우고 그대로 누적한다", async () => {

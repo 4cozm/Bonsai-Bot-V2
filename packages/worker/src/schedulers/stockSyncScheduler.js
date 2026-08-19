@@ -202,9 +202,19 @@ export function aggregateHangarStock(structureId, assets) {
             }
 
             for (const child of childrenByParent.get(String(item.item_id)) ?? []) {
-                const inheritedDivision = CORPSAG_FLAG_RE.test(child.location_flag)
-                    ? child.location_flag
-                    : division;
+                const isChildDivisionRoot = CORPSAG_FLAG_RE.test(child.location_flag);
+                // 컨테이너 내용물(Unlocked)이나 division 루트가 아니면 함선/구조물에
+                // "장착"된 것이다(HiSlot·MedSlot·LoSlot·RigSlot·Cargo·DroneBay 등 피팅·화물
+                // 슬롯) — 실측 확인됨: 이런 아이템은 is_singleton:true라도 ESI가 "이름
+                // 지정 가능한 아이템"으로 안 쳐서, item_id 하나가 getAssetNames 배치에
+                // 섞이면 그 청크(최대 200개) 전체가 404로 통째로 거부된다. 그 청크에
+                // 우연히 같이 묶인 진짜 이름 붙은 함선들까지 전부 이름을 잃어버렸었다
+                // (재시도해도 똑같은 요청을 그대로 다시 보내는 거라 안 고쳐짐). 어차피
+                // containerName 추적 규칙이 있을 수 없어 isTracked에서 항상 걸러지던
+                // 대상이라, 아예 여기서 더 내려가지 않아도 최종 재고 결과는 그대로다.
+                if (!isChildDivisionRoot && child.location_flag !== "Unlocked") continue;
+
+                const inheritedDivision = isChildDivisionRoot ? child.location_flag : division;
                 next.push({
                     item: child,
                     division: inheritedDivision,
@@ -253,9 +263,11 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
     // 아이템이라 같은 배치에 섞어도 안전하다(자산진단 명령에서 이미 검증된 패턴).
     const containerItemIds = aggregated.map((r) => r.containerItemId).filter((id) => id != null);
     const singletonItemIds = aggregated.map((r) => r.itemId).filter((id) => id != null);
-    const names = await getAssetNames(accessToken, structure.corporationId, [
-        ...new Set([...containerItemIds, ...singletonItemIds]),
-    ]);
+    const { names, hadFailures: namesHadFailures } = await getAssetNames(
+        accessToken,
+        structure.corporationId,
+        [...new Set([...containerItemIds, ...singletonItemIds])]
+    );
 
     const rules = await prisma.stockDivisionRule.findMany({
         where: { structureId: structure.structureId },
@@ -310,60 +322,72 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
     });
     const targetKeys = new Set(targets.map((t) => `${t.typeId}::${t.itemName || ""}`));
 
-    const existingNamedCombos = await prisma.stockLog.findMany({
-        where: { structureId: structure.structureId, itemName: { not: null } },
-        select: { typeId: true, itemName: true },
-        distinct: ["typeId", "itemName"],
-    });
-    const noTargetCombos = existingNamedCombos.filter(
-        (c) => !targetKeys.has(`${c.typeId}::${c.itemName || ""}`)
-    );
-    if (noTargetCombos.length > 0) {
-        await prisma.stockLog.deleteMany({
-            where: {
-                structureId: structure.structureId,
-                OR: noTargetCombos.map((c) => ({ typeId: c.typeId, itemName: c.itemName })),
-            },
+    // 이 사이클에 이름 조회(getAssetNames)가 한 청크라도 실패했으면 아래 두 정리
+    // 로직을 통째로 건너뛴다 — 실제로 겪은 사고: 이름 조회가 일시적으로 실패해서
+    // 진짜 존재하는 함선이 이번만 itemName:null로 잡히면, "이번 사이클에 없다"고
+    // 오판해서 그 함선의 30일 이력을 영구 삭제해 버릴 수 있었다. 이번 사이클에
+    // 못 지운 유령은 다음(성공하는) 사이클에 지우면 되니, 지우지 않는 쪽의 비용이
+    // 훨씬 싸다.
+    if (namesHadFailures) {
+        log.warn("[stock-sync] 이름 조회 일부 실패 — 이번 사이클은 유령 정리 스킵", {
+            structureId: String(structure.structureId),
         });
-    }
-
-    // 위 정리는 일부러 itemName이 있는 것만 본다 — 그걸 그냥 풀어버리면 탄약/모듈처럼
-    // 원래부터 이름이 없는 일반 소모품(목표 안 잡아둔 게 흔함)까지 "매치 안 됨"으로
-    // 걸려서 매 사이클 지워질 위험이 있다. 대신 "이 구조물에서 이름 붙은 채로 한 번
-    // 이상 나타난 적 있는 typeId"만 별도로 좁혀서, 그 typeId의 itemName=null 기록도
-    // 같은 방식으로 정리한다 — 조립 안 된(포장) 함선이 나중에 조립되면 그 typeId는
-    // 더 이상 itemName=null로 안 나타나는데, 옛 null 기록이 "이 typeId만의 마지막
-    // 관측값"으로 30일 내내 유령처럼 남아있던 문제(실측: 조립된 지 3일 지나서도 미조립
-    // 1대가 계속 잡힘)를 막는다. 일반 소모품 typeId는 이름 붙은 적이 아예 없어서 이
-    // 집합에 자동으로 안 걸린다.
-    const shipTypeIds = new Set([
-        ...existingNamedCombos.map((c) => c.typeId),
-        ...finalEntries.filter((e) => e.itemName != null).map((e) => e.typeId),
-    ]);
-    if (shipTypeIds.size > 0) {
-        const existingNullCombos = await prisma.stockLog.findMany({
-            where: {
-                structureId: structure.structureId,
-                itemName: null,
-                typeId: { in: [...shipTypeIds] },
-            },
-            select: { typeId: true },
-            distinct: ["typeId"],
+    } else {
+        const existingNamedCombos = await prisma.stockLog.findMany({
+            where: { structureId: structure.structureId, itemName: { not: null } },
+            select: { typeId: true, itemName: true },
+            distinct: ["typeId", "itemName"],
         });
-        const currentNullTypeIds = new Set(
-            finalEntries.filter((e) => e.itemName == null).map((e) => e.typeId)
+        const noTargetCombos = existingNamedCombos.filter(
+            (c) => !targetKeys.has(`${c.typeId}::${c.itemName || ""}`)
         );
-        const staleNullTypeIds = existingNullCombos
-            .map((c) => c.typeId)
-            .filter((typeId) => !currentNullTypeIds.has(typeId));
-        if (staleNullTypeIds.length > 0) {
+        if (noTargetCombos.length > 0) {
             await prisma.stockLog.deleteMany({
                 where: {
                     structureId: structure.structureId,
-                    itemName: null,
-                    typeId: { in: staleNullTypeIds },
+                    OR: noTargetCombos.map((c) => ({ typeId: c.typeId, itemName: c.itemName })),
                 },
             });
+        }
+
+        // 위 정리는 일부러 itemName이 있는 것만 본다 — 그걸 그냥 풀어버리면 탄약/모듈처럼
+        // 원래부터 이름이 없는 일반 소모품(목표 안 잡아둔 게 흔함)까지 "매치 안 됨"으로
+        // 걸려서 매 사이클 지워질 위험이 있다. 대신 "이 구조물에서 이름 붙은 채로 한 번
+        // 이상 나타난 적 있는 typeId"만 별도로 좁혀서, 그 typeId의 itemName=null 기록도
+        // 같은 방식으로 정리한다 — 조립 안 된(포장) 함선이 나중에 조립되면 그 typeId는
+        // 더 이상 itemName=null로 안 나타나는데, 옛 null 기록이 "이 typeId만의 마지막
+        // 관측값"으로 30일 내내 유령처럼 남아있던 문제(실측: 조립된 지 3일 지나서도 미조립
+        // 1대가 계속 잡힘)를 막는다. 일반 소모품 typeId는 이름 붙은 적이 아예 없어서 이
+        // 집합에 자동으로 안 걸린다.
+        const shipTypeIds = new Set([
+            ...existingNamedCombos.map((c) => c.typeId),
+            ...finalEntries.filter((e) => e.itemName != null).map((e) => e.typeId),
+        ]);
+        if (shipTypeIds.size > 0) {
+            const existingNullCombos = await prisma.stockLog.findMany({
+                where: {
+                    structureId: structure.structureId,
+                    itemName: null,
+                    typeId: { in: [...shipTypeIds] },
+                },
+                select: { typeId: true },
+                distinct: ["typeId"],
+            });
+            const currentNullTypeIds = new Set(
+                finalEntries.filter((e) => e.itemName == null).map((e) => e.typeId)
+            );
+            const staleNullTypeIds = existingNullCombos
+                .map((c) => c.typeId)
+                .filter((typeId) => !currentNullTypeIds.has(typeId));
+            if (staleNullTypeIds.length > 0) {
+                await prisma.stockLog.deleteMany({
+                    where: {
+                        structureId: structure.structureId,
+                        itemName: null,
+                        typeId: { in: staleNullTypeIds },
+                    },
+                });
+            }
         }
     }
 
