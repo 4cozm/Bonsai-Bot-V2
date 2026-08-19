@@ -709,4 +709,263 @@ describe("api/routes/stock", () => {
             }
         });
     });
+
+    describe("GET /v1/stock/structures/:structureId/fittings", () => {
+        test("세션 없으면 401", async () => {
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/1051025995560/fittings`);
+                expect(res.status).toBe(401);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("구조물이 없으면 404", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique: jest.fn().mockResolvedValue(null) },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/1051025995560/fittings`, {
+                    headers: AUTH_HEADERS,
+                });
+                expect(res.status).toBe(404);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("저장된 피팅을 items 그대로 반환한다", async () => {
+            const structureId = 1051025995560n;
+            const updatedAt = new Date("2026-08-19T10:00:00.000Z");
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId }),
+                },
+                shipFitting: {
+                    findMany: jest.fn().mockResolvedValue([
+                        {
+                            typeId: 22456,
+                            itemName: "에태클",
+                            items: [{ typeId: 2488, qty: 4 }],
+                            updatedAt,
+                        },
+                    ]),
+                },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/${structureId}/fittings`, {
+                    headers: AUTH_HEADERS,
+                });
+                const body = await res.json();
+
+                expect(res.status).toBe(200);
+                expect(body).toEqual({
+                    ok: true,
+                    fittings: [
+                        {
+                            typeId: 22456,
+                            itemName: "에태클",
+                            items: [{ typeId: 2488, qty: 4 }],
+                            updatedAt: updatedAt.toISOString(),
+                        },
+                    ],
+                });
+            } finally {
+                server.close();
+            }
+        });
+    });
+
+    describe("PATCH /v1/stock/structures/:structureId/fittings", () => {
+        function patch(baseUrl, structureId, body) {
+            return fetch(`${baseUrl}/v1/stock/structures/${structureId}/fittings`, {
+                method: "PATCH",
+                headers: { ...AUTH_HEADERS, "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+        }
+
+        test("세션 없으면 401", async () => {
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await fetch(`${baseUrl}/v1/stock/structures/1051025995560/fittings`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        typeId: 22456,
+                        itemName: "에태클",
+                        items: [{ typeId: 2488, qty: 4 }],
+                    }),
+                });
+                expect(res.status).toBe(401);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("구조물이 없으면 404", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: { findUnique: jest.fn().mockResolvedValue(null) },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, 1051025995560n, {
+                    typeId: 22456,
+                    itemName: "에태클",
+                    items: [{ typeId: 2488, qty: 4 }],
+                });
+                expect(res.status).toBe(404);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("typeId가 올바르지 않으면 400", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId: 1051025995560n }),
+                },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, 1051025995560n, {
+                    typeId: -1,
+                    itemName: "에태클",
+                    items: [{ typeId: 2488, qty: 4 }],
+                });
+                expect(res.status).toBe(400);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("itemName이 비어있으면 400(일반 품목엔 피팅 개념이 없음)", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId: 1051025995560n }),
+                },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, 1051025995560n, {
+                    typeId: 22456,
+                    itemName: "  ",
+                    items: [{ typeId: 2488, qty: 4 }],
+                });
+                expect(res.status).toBe(400);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("items가 배열이 아니면 400", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId: 1051025995560n }),
+                },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, 1051025995560n, {
+                    typeId: 22456,
+                    itemName: "에태클",
+                    items: "not-an-array",
+                });
+                expect(res.status).toBe(400);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("items 항목의 typeId/qty가 양의 정수가 아니면 400", async () => {
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId: 1051025995560n }),
+                },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, 1051025995560n, {
+                    typeId: 22456,
+                    itemName: "에태클",
+                    items: [{ typeId: 2488, qty: 0 }],
+                });
+                expect(res.status).toBe(400);
+            } finally {
+                server.close();
+            }
+        });
+
+        test("items가 있으면 upsert로 저장한다", async () => {
+            const structureId = 1051025995560n;
+            const upsert = jest.fn().mockResolvedValue({});
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId }),
+                },
+                shipFitting: { upsert },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, structureId, {
+                    typeId: 22456,
+                    itemName: "에태클",
+                    items: [{ typeId: 2488, qty: 4 }],
+                });
+                const body = await res.json();
+
+                expect(res.status).toBe(200);
+                expect(body).toEqual({ ok: true });
+                expect(upsert).toHaveBeenCalledWith({
+                    where: {
+                        structureId_typeId_itemName: {
+                            structureId,
+                            typeId: 22456,
+                            itemName: "에태클",
+                        },
+                    },
+                    create: {
+                        structureId,
+                        typeId: 22456,
+                        itemName: "에태클",
+                        items: [{ typeId: 2488, qty: 4 }],
+                    },
+                    update: { items: [{ typeId: 2488, qty: 4 }] },
+                });
+            } finally {
+                server.close();
+            }
+        });
+
+        test("items가 빈 배열이면 deleteMany로 지운다(delete가 아님 — 없는 행이어도 성공해야 함)", async () => {
+            const structureId = 1051025995560n;
+            const deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+            mockGetPrisma.mockReturnValue({
+                trackedStructure: {
+                    findUnique: jest.fn().mockResolvedValue({ structureId }),
+                },
+                shipFitting: { deleteMany },
+            });
+            const { server, baseUrl } = startTestApp();
+            try {
+                const res = await patch(baseUrl, structureId, {
+                    typeId: 22456,
+                    itemName: "에태클",
+                    items: [],
+                });
+                const body = await res.json();
+
+                expect(res.status).toBe(200);
+                expect(body).toEqual({ ok: true });
+                expect(deleteMany).toHaveBeenCalledWith({
+                    where: { structureId, typeId: 22456, itemName: "에태클" },
+                });
+            } finally {
+                server.close();
+            }
+        });
+    });
 });

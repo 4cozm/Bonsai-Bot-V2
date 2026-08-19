@@ -252,6 +252,91 @@ export function createStockRouter() {
         res.json({ ok: true });
     });
 
+    // GET /v1/stock/structures/:structureId/fittings — 이 구조물에 저장된 피팅 전부.
+    // 커스텀명 있는 함선만 대상이라 개수가 적어서, 모달/매니페스트를 열 때마다 개별
+    // 조회하지 않고 구조물 로드 시 한 번만 받아 프론트가 들고 있는다.
+    router.get("/structures/:structureId/fittings", async (req, res) => {
+        const structureId = parseBigIntParam(req.params.structureId);
+        if (structureId == null) {
+            return res.status(400).json({ ok: false, error: "structureId가 올바르지 않습니다." });
+        }
+
+        const prisma = getPrisma(req.session.tenantKey);
+        const structure = await prisma.trackedStructure.findUnique({ where: { structureId } });
+        if (!structure) {
+            return res.status(404).json({ ok: false, error: "구조물을 찾을 수 없습니다." });
+        }
+
+        const fittings = await prisma.shipFitting.findMany({ where: { structureId } });
+        res.json({
+            ok: true,
+            fittings: fittings.map((f) => ({
+                typeId: f.typeId,
+                itemName: f.itemName,
+                items: f.items,
+                updatedAt: f.updatedAt.toISOString(),
+            })),
+        });
+    });
+
+    // PATCH /v1/stock/structures/:structureId/fittings — 피팅 저장/삭제.
+    // body: { typeId, itemName, items: [{typeId, qty}] }. items가 비어있으면(길이 0)
+    // "피팅 없음"으로 되돌리는 것이므로 행을 지운다. 존재 검증(프론트가 ESI
+    // POST /universe/ids/로 이미 확인)은 여기서 다시 안 한다 — 형태만 본다.
+    router.patch("/structures/:structureId/fittings", async (req, res) => {
+        const structureId = parseBigIntParam(req.params.structureId);
+        if (structureId == null) {
+            return res.status(400).json({ ok: false, error: "structureId가 올바르지 않습니다." });
+        }
+
+        const typeId = Number(req.body?.typeId);
+        if (!Number.isInteger(typeId) || typeId <= 0) {
+            return res.status(400).json({ ok: false, error: "typeId가 올바르지 않습니다." });
+        }
+        const itemName = String(req.body?.itemName ?? "").trim();
+        if (!itemName) {
+            return res.status(400).json({ ok: false, error: "itemName이 필요합니다." });
+        }
+
+        const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : null;
+        if (!itemsRaw) {
+            return res.status(400).json({ ok: false, error: "items가 올바르지 않습니다." });
+        }
+        const items = [];
+        for (const raw of itemsRaw) {
+            const itemTypeId = Number(raw?.typeId);
+            const qty = Number(raw?.qty);
+            const valid =
+                Number.isInteger(itemTypeId) && itemTypeId > 0 && Number.isInteger(qty) && qty > 0;
+            if (!valid) {
+                return res
+                    .status(400)
+                    .json({ ok: false, error: "items 항목이 올바르지 않습니다." });
+            }
+            items.push({ typeId: itemTypeId, qty });
+        }
+
+        const prisma = getPrisma(req.session.tenantKey);
+        const structure = await prisma.trackedStructure.findUnique({ where: { structureId } });
+        if (!structure) {
+            return res.status(404).json({ ok: false, error: "구조물을 찾을 수 없습니다." });
+        }
+
+        if (items.length === 0) {
+            // delete()가 아니라 deleteMany() — /targets와 같은 이유(삭제 대상이 이미
+            // 없어도 에러 없이 성공으로 끝나야 함).
+            await prisma.shipFitting.deleteMany({ where: { structureId, typeId, itemName } });
+        } else {
+            await prisma.shipFitting.upsert({
+                where: { structureId_typeId_itemName: { structureId, typeId, itemName } },
+                create: { structureId, typeId, itemName, items },
+                update: { items },
+            });
+        }
+
+        res.json({ ok: true });
+    });
+
     // GET /v1/stock/structures/:structureId/items/:typeId/history?days=90&itemName=
     // — 아이템 하나의 전체 이력(모달용, on-demand). itemName이 있으면 그 이름의
     // 함선 이력만(없으면 같은 typeId의 다른 이름 함선들 이력까지 섞여 나온다 —

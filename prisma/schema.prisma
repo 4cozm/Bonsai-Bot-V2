@@ -115,6 +115,7 @@ model TrackedStructure {
   targets       StockTarget[]
   logs          StockLog[]
   divisionRules StockDivisionRule[]
+  fittings      ShipFitting[]
 }
 
 // 품목별 목표 재고 수량. 프론트에서 명시적으로 목표를 설정한 품목만 생긴다.
@@ -132,6 +133,27 @@ model StockTarget {
   // 복합 유니크 인덱스 안 nullable 컬럼엔 Prisma가 null where를 못 쓴다.
   itemName  String @default("")
   targetQty Int
+
+  @@unique([structureId, typeId, itemName])
+}
+
+// 커스텀명 붙은 함선의 저장된 피팅(EFT 붙여넣기 결과). 항상 통째로 읽고 통째로
+// 덮어쓰는 데이터라 별도 자식 테이블 없이 JSON 컬럼 하나로 저장한다. itemName은
+// StockTarget과 달리 빈 문자열을 허용하지 않는다 — 피팅은 커스텀명 있는 함선
+// 전용 기능이라 "이름 없는 일반 품목"이라는 경우 자체가 없다.
+model ShipFitting {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  structure   TrackedStructure @relation(fields: [structureId], references: [structureId])
+  structureId BigInt
+  typeId      Int // 함선의 EVE type_id
+  itemName    String // 함선의 게임 내 커스텀명(빈 문자열 불가)
+  // [{ typeId: number, qty: number }] — 프론트가 ESI POST /universe/ids/로 이미
+  // 존재를 확인한 typeId만 들어온다고 가정한다(내부 도구라 조작 우려 없음, 백엔드는
+  // 형태만 검증하고 존재 여부는 재검증하지 않음).
+  items Json
 
   @@unique([structureId, typeId, itemName])
 }
