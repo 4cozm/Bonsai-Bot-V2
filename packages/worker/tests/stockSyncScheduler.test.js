@@ -799,7 +799,14 @@ describe("stockSyncScheduler/syncStructure", () => {
         const prisma = {
             stockLog: {
                 createMany: jest.fn().mockResolvedValue({ count: 1 }),
-                findMany: jest.fn().mockResolvedValue([{ typeId: 22456, itemName: "에태클" }]),
+                // itemName:null 조회(미조립 함선 유령 정리용)와 itemName:{not:null}
+                // 조회(이름 있는 함선 정리용)를 where로 구분해야 한다 — 안 그러면 같은
+                // 캔 값이 null 조회에도 그대로 나가서 실제로 없는 미조립 유령이 있는
+                // 것처럼 잘못 감지된다.
+                findMany: jest.fn().mockImplementation((args) => {
+                    if (args?.where?.itemName === null) return Promise.resolve([]);
+                    return Promise.resolve([{ typeId: 22456, itemName: "에태클" }]);
+                }),
                 deleteMany,
             },
             stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
@@ -856,6 +863,163 @@ describe("stockSyncScheduler/syncStructure", () => {
                 OR: [{ typeId: 22456, itemName: "예전함선" }],
             },
         });
+    });
+
+    // 회귀 테스트: 조립 안 된(itemName=null) 함선이 조립돼서 이름이 붙으면, 그
+    // typeId의 옛 null 기록도 유령으로 지워져야 한다 — 실측으로 겪은 버그(조립된 지
+    // 3일이 지나도 미조립 1대가 계속 "현재 재고"에 남아있던 문제)의 회귀 테스트.
+    test("미조립 함선이 조립되면 그 typeId의 옛 itemName=null 유령 기록을 지운다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        const SHIP_ID = 7001;
+        global.fetch = jest.fn(async (url) => {
+            if (String(url).includes("/assets/names/")) {
+                return { ok: true, json: async () => [{ item_id: SHIP_ID, name: "새함선" }] };
+            }
+            return {
+                ok: true,
+                headers: { get: () => "1" },
+                json: async () => [
+                    {
+                        item_id: SHIP_ID,
+                        type_id: 22456,
+                        location_id: STRUCTURE_ID,
+                        location_flag: "CorpSAG3",
+                        quantity: 1,
+                        is_singleton: true,
+                    },
+                ],
+            };
+        });
+        const deleteMany = jest.fn().mockResolvedValue({ count: 1 });
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                findMany: jest.fn().mockImplementation((args) => {
+                    if (args?.where?.itemName === null) {
+                        // 예전에(미조립일 때) 이 typeId로 남긴 null 기록.
+                        return Promise.resolve([{ typeId: 22456 }]);
+                    }
+                    // 이름 붙은 기록은 이번이 처음이라 DB엔 아직 없음.
+                    return Promise.resolve([]);
+                }),
+                deleteMany,
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        expect(deleteMany).toHaveBeenCalledWith({
+            where: {
+                structureId: STRUCTURE_ID,
+                itemName: null,
+                typeId: { in: [22456] },
+            },
+        });
+    });
+
+    test("여전히 미조립 상태로 남아있는 함선은 null 기록을 안 지운다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        global.fetch = jest.fn(async (url) => {
+            if (String(url).includes("/assets/names/")) {
+                return { ok: true, json: async () => [] }; // 여전히 이름 없음
+            }
+            return {
+                ok: true,
+                headers: { get: () => "1" },
+                json: async () => [
+                    {
+                        item_id: 7001,
+                        type_id: 22456,
+                        location_id: STRUCTURE_ID,
+                        location_flag: "CorpSAG3",
+                        quantity: 1,
+                        is_singleton: false, // 계속 미조립
+                    },
+                ],
+            };
+        });
+        const deleteMany = jest.fn();
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 1 }),
+                findMany: jest.fn().mockImplementation((args) => {
+                    // 예전에 이름 붙은 적이 있어서(같은 typeId) null 정리 대상 후보에는
+                    // 든다 — 하지만 이번 사이클에도 여전히 null로 나타나므로 지우면 안 됨.
+                    if (args?.where?.itemName === null) return Promise.resolve([{ typeId: 22456 }]);
+                    return Promise.resolve([{ typeId: 22456, itemName: "예전이름" }]);
+                }),
+                deleteMany,
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        // 이름 있는 쪽("예전이름")은 이번 사이클에 없으니 지워지지만, null 쪽은
+        // 여전히 현재 상태라 지워지면 안 된다 — 두 delete가 서로 섞이지 않는지 확인.
+        expect(deleteMany).toHaveBeenCalledTimes(1);
+        expect(deleteMany).toHaveBeenCalledWith({
+            where: {
+                structureId: STRUCTURE_ID,
+                OR: [{ typeId: 22456, itemName: "예전이름" }],
+            },
+        });
+    });
+
+    // 회귀 테스트: 일반 소모품(탄약 등)은 이름 붙은 적이 아예 없으므로, 이번
+    // 사이클에 안 나타나도(다 써서 없어짐 등) null 정리 로직이 안 건드려야 한다 —
+    // "이름 붙은 적 있는 typeId만" 정리 대상이라는 스코프를 확인한다.
+    test("이름 붙은 적 없는 일반 소모품 typeId는 null 정리 대상에서 제외된다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        global.fetch = jest.fn(async () => ({
+            ok: true,
+            headers: { get: () => "1" },
+            json: async () => [], // 이번 사이클엔 이 typeId가 아예 안 나타남(다 소진됨)
+        }));
+        const deleteMany = jest.fn();
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn(),
+                findMany: jest.fn().mockImplementation((args) => {
+                    // 이름 붙은 기록은 이 구조물에 전혀 없다 — 순수 소모품만 있던 상태.
+                    if (args?.where?.itemName === null) return Promise.resolve([{ typeId: 34 }]);
+                    return Promise.resolve([]);
+                }),
+                deleteMany,
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        // shipTypeIds가 비어있으니(이름 붙은 적 있는 typeId가 없음) null 정리
+        // 쿼리 자체를 안 날린다 — findMany가 itemName:null where로 호출되지 않는다.
+        expect(
+            prisma.stockLog.findMany.mock.calls.some((c) => c[0]?.where?.itemName === null)
+        ).toBe(false);
+        expect(deleteMany).not.toHaveBeenCalled();
     });
 
     test("콥 자산 조회가 실패하면(non-ok) StockLog를 기록하지 않는다", async () => {
