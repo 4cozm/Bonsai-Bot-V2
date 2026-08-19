@@ -876,3 +876,157 @@ describe("stockSyncScheduler/syncStructure", () => {
         expect(result).toEqual({ ok: false, reason: "콥 자산 조회 실패" });
     });
 });
+
+// 회귀 테스트: ESI Expires 헤더 기반 다음 동기화 시각 계산(scheduleNext)은
+// 내부 함수라 직접 export되지 않는다 — syncStructure를 통해 그 부수효과
+// (TrackedStructure.update 호출 인자)로 관측한다. 이전엔 이 파일의 어떤
+// 테스트도 prisma.trackedStructure를 안 모킹해서, 모든 테스트가 scheduleNext의
+// DB 기록 실패(catch로 조용히 삼켜짐) 분기만 우연히 타고 있었다 — due-time
+// 계산 자체는 사실상 한 번도 검증된 적이 없었다.
+describe("stockSyncScheduler/syncStructure → scheduleNext(다음 동기화 시각)", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    test("응답 Expires 헤더가 있으면 그 값+10초 여유로 nextSyncAt을 기록한다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30분 뒤(임의)
+        global.fetch = jest.fn(async () => ({
+            ok: true,
+            headers: { get: (name) => (name === "expires" ? expiresAt.toUTCString() : "1") },
+            json: async () => [],
+        }));
+        const update = jest.fn().mockResolvedValue({});
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 0 }),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            trackedStructure: { update },
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        expect(update).toHaveBeenCalledTimes(1);
+        const call = update.mock.calls[0][0];
+        expect(call.where).toEqual({ structureId: STRUCTURE_ID });
+        // HTTP-date는 초 단위 정밀도라, Date.parse 왕복에서 최대 1초 오차가 생길 수 있다.
+        expect(
+            Math.abs(call.data.nextSyncAt.getTime() - (expiresAt.getTime() + 10_000))
+        ).toBeLessThan(1_500);
+    });
+
+    test("Expires 헤더가 없으면 1시간 뒤로 폴백한다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        global.fetch = jest.fn(async () => ({
+            ok: true,
+            headers: { get: () => null },
+            json: async () => [],
+        }));
+        const update = jest.fn().mockResolvedValue({});
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 0 }),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            trackedStructure: { update },
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        const before = Date.now();
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        expect(update).toHaveBeenCalledTimes(1);
+        const nextSyncAt = update.mock.calls[0][0].data.nextSyncAt.getTime();
+        expect(nextSyncAt).toBeGreaterThanOrEqual(before + 60 * 60 * 1000 - 1_000);
+        expect(nextSyncAt).toBeLessThanOrEqual(before + 60 * 60 * 1000 + 5_000);
+    });
+
+    test("토큰이 없어도 1시간 뒤 폴백으로 nextSyncAt을 기록한다(다음 tick에서 재시도되게)", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue(null);
+        const update = jest.fn().mockResolvedValue({});
+        const prisma = { trackedStructure: { update } };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        const before = Date.now();
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        expect(update).toHaveBeenCalledWith({
+            where: { structureId: STRUCTURE_ID },
+            data: { nextSyncAt: expect.any(Date) },
+        });
+        const nextSyncAt = update.mock.calls[0][0].data.nextSyncAt.getTime();
+        expect(nextSyncAt).toBeGreaterThanOrEqual(before + 60 * 60 * 1000 - 1_000);
+    });
+
+    test("콥 자산 조회가 재시도까지 실패해도 1시간 뒤 폴백으로 nextSyncAt을 기록한다", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        global.fetch = jest.fn(async () => ({ ok: false, status: 500 }));
+        const update = jest.fn().mockResolvedValue({});
+        const prisma = { trackedStructure: { update } };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        const before = Date.now();
+        await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        expect(update).toHaveBeenCalledTimes(1);
+        const nextSyncAt = update.mock.calls[0][0].data.nextSyncAt.getTime();
+        expect(nextSyncAt).toBeGreaterThanOrEqual(before + 60 * 60 * 1000 - 1_000);
+    });
+
+    test("trackedStructure.update이 실패해도(DB 오류) 예외를 던지지 않는다 — 스케줄링 자체는 인메모리로 이미 반영됐기 때문", async () => {
+        mockGetAccessTokenForCharacter.mockResolvedValue("token-abc");
+        global.fetch = jest.fn(async () => ({
+            ok: true,
+            headers: { get: () => null },
+            json: async () => [],
+        }));
+        const prisma = {
+            stockLog: {
+                createMany: jest.fn().mockResolvedValue({ count: 0 }),
+                findMany: jest.fn().mockResolvedValue([]),
+                deleteMany: jest.fn(),
+            },
+            stockDivisionRule: { findMany: jest.fn().mockResolvedValue([]) },
+            stockTarget: { findMany: jest.fn().mockResolvedValue([]) },
+            trackedStructure: { update: jest.fn().mockRejectedValue(new Error("DB down")) },
+        };
+        const log = { info: jest.fn(), warn: jest.fn() };
+
+        const result = await syncStructure({
+            prisma,
+            structure: { structureId: STRUCTURE_ID, corporationId: 98641311 },
+            anchorCharacterId: 2115893596n,
+            log,
+        });
+
+        expect(result).toEqual({ ok: true, itemTypes: 0 });
+    });
+});

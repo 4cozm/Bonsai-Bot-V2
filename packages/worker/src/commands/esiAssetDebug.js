@@ -345,6 +345,13 @@ export default {
                     "이 characterId로 조회(환경변수 앵커 대신). 구조물 소유 콥과 콥행어 소유 콥이 다를 때 사용",
                 required: false,
             },
+            {
+                type: 3, // STRING
+                name: "검색",
+                description:
+                    "행어·오피스 전수 검색 결과를 이 문자열로 필터(타입명/커스텀명 부분일치, 대소문자 무시). 건수가 많아 잘릴 때 사용",
+                required: false,
+            },
         ],
     },
 
@@ -375,7 +382,9 @@ export default {
             구조물: structureIdOpt,
             상세: detailed,
             캐릭터: characterIdOpt,
+            검색: searchFilter,
         } = parseArgs(envelope?.args);
+        const searchNeedle = searchFilter ? String(searchFilter).trim().toLowerCase() : null;
 
         // 단계별로 쌓아서, 어디서 막히든 여기까지의 결과를 그대로 회신한다.
         const steps = [];
@@ -643,41 +652,64 @@ export default {
                       .map((e) => `HTTP ${e.status}(${e.itemCount}건, ${e.body})`)
                       .join(", ")
                 : "";
+
+        // 타입명/커스텀명을 미리 계산해 둔다 — 검색 필터(있으면)와 아래 표시 줄
+        // 양쪽에서 같은 라벨을 쓴다(중복 계산 방지, 라벨 불일치 방지).
+        const officeLabeled = officeAndHangarAssets.map((a) => {
+            const typeName = officeTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
+            let nameLabel;
+            if (!a.is_singleton) {
+                // 스택형 아이템은 애초에 이름 지정 대상이 아니다(ESI 스펙상
+                // is_singleton=true 만 유효) — "응답 없음"은 오해의 소지가
+                // 있어 그냥 타입명만 보여준다. 조립 안 된(포장) 함선이 바로 이
+                // 경우다 — 커스텀명 있는 조립된 함선과는 완전히 별도로 잡힌다.
+                nameLabel = typeName;
+            } else {
+                // customName이 undefined면 이 item_id에 대해 ESI가 이름
+                // 자체를 안 준 것(응답 목록에 아예 없음)이다 — "이름이
+                // 타입명이랑 같아서 안 보여준 것"과는 다른 상태라 구분한다.
+                const hasCustomEntry = Object.hasOwn(officeCustomNames, String(a.item_id));
+                const customName = officeCustomNames[String(a.item_id)];
+                nameLabel = !hasCustomEntry
+                    ? `${typeName} (ESI 이름 응답 없음)`
+                    : customName === typeName
+                      ? `${typeName} (기본값 그대로)`
+                      : `${typeName} · 커스텀명:"${customName}"`;
+            }
+            return { asset: a, typeName, nameLabel };
+        });
+
+        // 검색어가 있으면 타입명/커스텀명 부분일치(대소문자 무시)로 좁힌다 —
+        // 건수가 많아 Discord 필드 한도(1024자)에 다 안 들어갈 때, 잘려서 못 보는
+        // 대신 원하는 것만 걸러서 본다.
+        const officeMatched = searchNeedle
+            ? officeLabeled.filter((l) => l.nameLabel.toLowerCase().includes(searchNeedle))
+            : officeLabeled;
+
         const officeFlagCounts = {};
-        for (const a of officeAndHangarAssets) {
-            officeFlagCounts[a.location_flag] = (officeFlagCounts[a.location_flag] ?? 0) + 1;
+        for (const { asset } of officeMatched) {
+            officeFlagCounts[asset.location_flag] =
+                (officeFlagCounts[asset.location_flag] ?? 0) + 1;
         }
         const officeSummaryLine =
             Object.entries(officeFlagCounts)
                 .map(([flag, count]) => `${labelFlag(flag, hangarNames)}: ${count}건`)
                 .join(", ") || "0건";
         const officeLines =
-            officeAndHangarAssets
-                .map((a) => {
-                    const typeName = officeTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
-                    let nameLabel;
-                    if (!a.is_singleton) {
-                        // 스택형 아이템은 애초에 이름 지정 대상이 아니다(ESI 스펙상
-                        // is_singleton=true 만 유효) — "응답 없음"은 오해의 소지가
-                        // 있어 그냥 타입명만 보여준다.
-                        nameLabel = typeName;
-                    } else {
-                        // customName이 undefined면 이 item_id에 대해 ESI가 이름
-                        // 자체를 안 준 것(응답 목록에 아예 없음)이다 — "이름이
-                        // 타입명이랑 같아서 안 보여준 것"과는 다른 상태라 구분한다.
-                        const hasCustomEntry = Object.hasOwn(officeCustomNames, String(a.item_id));
-                        const customName = officeCustomNames[String(a.item_id)];
-                        nameLabel = !hasCustomEntry
-                            ? `${typeName} (ESI 이름 응답 없음)`
-                            : customName === typeName
-                              ? `${typeName} (기본값 그대로)`
-                              : `${typeName} · 커스텀명:"${customName}"`;
-                    }
-                    return `${labelFlag(a.location_flag, hangarNames)} · ${nameLabel} · item_id=${a.item_id} · location_id=${a.location_id} · 수량${a.quantity}`;
-                })
-                .join("\n") || "(행어·오피스 계열 flag 항목 0건)";
+            officeMatched
+                .map(
+                    ({ asset: a, nameLabel }) =>
+                        `${labelFlag(a.location_flag, hangarNames)} · ${nameLabel} · item_id=${a.item_id} · location_id=${a.location_id} · 수량${a.quantity}`
+                )
+                .join("\n") ||
+            (searchNeedle
+                ? `("${searchFilter}" 검색 결과 0건)`
+                : "(행어·오피스 계열 flag 항목 0건)");
         steps.push({
-            name: `행어·오피스 계열 전수 검색 (필터: ${filterNote} · ${filtered.length}건 중 ${officeAndHangarAssets.length}건)`,
+            name:
+                `행어·오피스 계열 전수 검색 (필터: ${filterNote}` +
+                (searchNeedle ? `, 검색:${searchFilter}` : "") +
+                ` · ${filtered.length}건 중 ${officeMatched.length}건${searchNeedle ? ` (전체 ${officeAndHangarAssets.length}건 중 매칭)` : ""})`,
             value: truncate(`요약: ${officeSummaryLine}${officeNameErrorNote}\n${officeLines}`),
             inline: false,
         });
