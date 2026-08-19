@@ -200,6 +200,94 @@ describe("worker/commands/esiAssetDebug", () => {
         expect(officeScan.value).toContain("CorpSAG1");
     });
 
+    // 회귀 테스트: 조립 안 된(포장, is_singleton=false) 함선은 타입명만 표시되고
+    // 커스텀명 있는 조립된 함선과는 별개로 잡힌다 — 실제로 이걸 못 찾아서
+    // "인게임엔 5개인데 사이트엔 4개"로 보이는 문제를 진단하다가 검색 필터를
+    // 추가했다. 건수가 많아 필드가 잘려도 검색어로 원하는 것만 볼 수 있어야 한다.
+    test("검색 옵션: 타입명/커스텀명 부분일치로 좁히고, 매칭 안 되는 항목은 안 보여준다", async () => {
+        const PACKAGED_ISHTAR_ID = 601;
+        const PACKAGED_LOKI_ID = 602;
+        const assets = [
+            ...buildNestedAssets(),
+            {
+                item_id: PACKAGED_ISHTAR_ID,
+                type_id: 12005, // Ishtar
+                location_id: OFFICE_ITEM_ID,
+                location_type: "item",
+                location_flag: "CorpSAG5",
+                is_singleton: false, // 조립 안 됨(포장) — 이름 지정 불가
+                quantity: 1,
+            },
+            {
+                item_id: PACKAGED_LOKI_ID,
+                type_id: 29990, // Loki
+                location_id: OFFICE_ITEM_ID,
+                location_type: "item",
+                location_flag: "CorpSAG5",
+                is_singleton: false,
+                quantity: 1,
+            },
+        ];
+        global.fetch = jest.fn(async (url) => {
+            const u = String(url);
+            if (u.includes("/assets/?")) {
+                return { ok: true, headers: { get: () => "1" }, json: async () => assets };
+            }
+            if (u.includes("/divisions/")) {
+                return { ok: true, json: async () => ({ hangar: [] }) };
+            }
+            if (u.includes("/assets/names/")) {
+                return { ok: true, json: async () => [] };
+            }
+            if (u.includes("/universe/types/12005/")) {
+                return { ok: true, json: async () => ({ name: "Ishtar", group_id: 26 }) };
+            }
+            if (u.includes("/universe/types/29990/")) {
+                return { ok: true, json: async () => ({ name: "Loki", group_id: 358 }) };
+            }
+            if (u.includes("/universe/types/")) {
+                return { ok: true, json: async () => ({ name: "Fortizar", group_id: 1657 }) };
+            }
+            return { ok: false, status: 404, text: async () => "" };
+        });
+        const ctx = { prisma: {} };
+        const envelope = {
+            meta: { discordUserId: ALLOWED_DISCORD_ID },
+            args: JSON.stringify({ 검색: "ishtar" }), // 대소문자 무시 확인 겸 소문자로
+        };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        expect(officeScan.name).toContain("검색:ishtar");
+        expect(officeScan.name).toContain("1건");
+        expect(officeScan.value).toContain(`item_id=${PACKAGED_ISHTAR_ID}`);
+        expect(officeScan.value).toContain("Ishtar");
+        expect(officeScan.value).not.toContain(`item_id=${PACKAGED_LOKI_ID}`);
+        expect(officeScan.value).not.toContain("Loki");
+    });
+
+    test("검색 옵션: 매칭되는 게 없으면 0건이라고 명시한다", async () => {
+        mockFetchSequence({ assets: buildNestedAssets() });
+        const ctx = { prisma: {} };
+        const envelope = {
+            meta: { discordUserId: ALLOWED_DISCORD_ID },
+            args: JSON.stringify({ 검색: "존재하지않는이름ZZZ" }),
+        };
+
+        const out = await esiAssetDebug.execute(ctx, envelope);
+
+        expect(out.ok).toBe(true);
+        const officeScan = out.data.fields.find((f) =>
+            f.name.startsWith("행어·오피스 계열 전수 검색")
+        );
+        expect(officeScan.value).toContain("존재하지않는이름ZZZ");
+        expect(officeScan.value).toContain("검색 결과 0건");
+    });
+
     test("함선처럼 커스텀 이름이 붙은 아이템은 타입 이름과 커스텀 이름을 같이 보여준다", async () => {
         const SHIP_ITEM_ID = 777000111;
         const assets = [
