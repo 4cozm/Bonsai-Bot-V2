@@ -107,6 +107,72 @@ describe("worker/esi/getAssetNames", () => {
         expect(result.hadFailures).toBe(true);
     });
 
+    // 회귀 테스트: 실제로 겪은 버그 — 배치에 이름 지정 불가한 id(청사진 사본 등,
+    // 함선 장착 모듈 필터링으로도 못 거르는 케이스) 하나만 섞여도 ESI가 배치 전체를
+    // 404로 거부했다. 재시도로는 절대 안 고쳐지는(똑같은 요청을 그대로 다시 보내는)
+    // 실패라, 이분 탐색으로 문제 id를 찾아서 격리하고 나머지는 정상적으로 이름을
+    // 받아야 한다.
+    test("배치에 이름 지정 불가한 id가 하나 섞여도 이분 탐색으로 나머지는 정상 조회된다", async () => {
+        const POISON_ID = 3;
+        globalThis.fetch = jest.fn().mockImplementation((url, opts) => {
+            const batch = JSON.parse(opts.body);
+            if (batch.includes(POISON_ID)) {
+                return Promise.resolve({ ok: false, status: 404 });
+            }
+            return Promise.resolve({
+                ok: true,
+                json: () =>
+                    Promise.resolve(batch.map((id) => ({ item_id: id, name: `name-${id}` }))),
+            });
+        });
+
+        const result = await getAssetNames("token", 12345, [1, 2, 3, 4]);
+
+        expect(result.names.get(1)).toBe("name-1");
+        expect(result.names.get(2)).toBe("name-2");
+        expect(result.names.has(3)).toBe(false); // 이름 지정 불가 id — 조용히 빠짐
+        expect(result.names.get(4)).toBe("name-4");
+        // 이름 지정 불가 id 하나 때문에 정리 로직이 계속 막히면 안 되니, hadFailures는
+        // 안 켜져야 한다 — 이건 재시도로 고칠 "실패"가 아니라 확정된 상태다.
+        expect(result.hadFailures).toBe(false);
+    });
+
+    test("배치에 이름 지정 불가한 id가 여러 개 흩어져 있어도 전부 격리하고 나머지는 정상 조회된다", async () => {
+        const POISON_IDS = new Set([2, 7]);
+        globalThis.fetch = jest.fn().mockImplementation((url, opts) => {
+            const batch = JSON.parse(opts.body);
+            if (batch.some((id) => POISON_IDS.has(id))) {
+                return Promise.resolve({ ok: false, status: 404 });
+            }
+            return Promise.resolve({
+                ok: true,
+                json: () =>
+                    Promise.resolve(batch.map((id) => ({ item_id: id, name: `name-${id}` }))),
+            });
+        });
+
+        const ids = [1, 2, 3, 4, 5, 6, 7, 8];
+        const result = await getAssetNames("token", 12345, ids);
+
+        for (const id of ids) {
+            if (POISON_IDS.has(id)) {
+                expect(result.names.has(id)).toBe(false);
+            } else {
+                expect(result.names.get(id)).toBe(`name-${id}`);
+            }
+        }
+        expect(result.hadFailures).toBe(false);
+    });
+
+    test("404는 재시도 없이 바로 포기한다(재시도해도 똑같은 요청이라 의미가 없음)", async () => {
+        globalThis.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 });
+        const result = await getAssetNames("token", 12345, [1]);
+        expect(result.names.size).toBe(0);
+        expect(result.hadFailures).toBe(false);
+        // MAX_ATTEMPTS(3)만큼 재시도했다면 3번 불렸겠지만, 404는 1번만 부르고 포기한다.
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
     test("첫 시도가 실패해도 재시도가 성공하면 결과에 포함된다 — 실제로 겪은 버그의 핵심", async () => {
         let attempts = 0;
         globalThis.fetch = jest.fn().mockImplementation(() => {
