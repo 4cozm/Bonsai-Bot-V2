@@ -28,6 +28,18 @@ function truncate(text, max = FIELD_MAX) {
 }
 
 /**
+ * Discord 마크다운 특수문자를 이스케이프한다. 실측으로 겪은 문제: 커스텀명에
+ * `_`(기울임 마크다운) 하나가 들어있으면, 한 필드 안에 그런 이름이 여러 줄
+ * 섞였을 때 Discord가 줄을 넘나들며 밑줄들을 기울임 시작/끝으로 짝지어
+ * 먹어버려서 실제로는 있는 밑줄이 화면에서 안 보였다("이_드론용"이 전부
+ * "이드론용"으로 보임 — DB엔 문제없고 순수 표시 버그였음). typeName/customName이
+ * 만들어지는 지점에서 한 번만 이스케이프해 두면 이후 어디서 조합해도 안전하다.
+ */
+function escapeMd(text) {
+    return String(text ?? "").replace(/([\\_*~`|])/g, "\\$1");
+}
+
+/**
  * accessToken(JWT)의 scp 클레임을 읽어 부여된 스코프 목록을 반환한다.
  * 서명 검증은 하지 않는다 — 우리 DB에 저장된 토큰이라 신뢰 경계가 아니라
  * "이 토큰에 실제로 무슨 스코프가 실려 있나"만 보는 용도다.
@@ -606,7 +618,9 @@ export default {
                 ).length;
                 const info = typeInfo[c.type_id];
                 const isRefinery = info?.groupId === REFINERY_GROUP_ID;
-                const label = nameMap[String(c.item_id)] ?? info?.name ?? `type_id=${c.type_id}`;
+                const label = escapeMd(
+                    nameMap[String(c.item_id)] ?? info?.name ?? `type_id=${c.type_id}`
+                );
                 const note = isRefinery ? " ⚠️Refinery(콥행어 불가)" : "";
                 return `**${label}**${note}\n  item_id=${c.item_id} · 총 ${nested.items.length}건 · CorpSAG ${corpSag}건`;
             });
@@ -744,11 +758,15 @@ export default {
         // 검색 결과도 Discord 필드 한도(950자)에 다 못 들어가는 경우가 있었다.
         const officeLines =
             officeMatched
-                .map(({ asset: a, nameLabel }) =>
-                    searchNeedle
-                        ? `${nameLabel} · item_id=${a.item_id}`
-                        : `${labelFlag(a.location_flag, hangarNames)} · ${nameLabel} · item_id=${a.item_id} · location_id=${a.location_id} · 수량${a.quantity}`
-                )
+                .map(({ asset: a, nameLabel }) => {
+                    // 검색 매칭(officeMatched 필터링)은 원본 nameLabel로 이미 끝났다 —
+                    // 여기 표시 직전에만 이스케이프해서, 실제로는 있는데 화면에서만
+                    // 안 보이는 문자(밑줄 등)가 안 생기게 한다.
+                    const safeLabel = escapeMd(nameLabel);
+                    return searchNeedle
+                        ? `${safeLabel} · item_id=${a.item_id}`
+                        : `${labelFlag(a.location_flag, hangarNames)} · ${safeLabel} · item_id=${a.item_id} · location_id=${a.location_id} · 수량${a.quantity}`;
+                })
                 .join("\n") ||
             (searchNeedle
                 ? `("${searchFilter}" 검색 결과 0건)`
@@ -831,10 +849,10 @@ export default {
                     .map((a) => {
                         const customName = structureNames[String(a.item_id)];
                         const info = structureTypeInfo[a.type_id];
-                        const typeLabel = info?.name ?? `type_id=${a.type_id}`;
+                        const typeLabel = escapeMd(info?.name ?? `type_id=${a.type_id}`);
                         const refineryNote =
                             info?.groupId === REFINERY_GROUP_ID ? " ⚠️Refinery" : "";
-                        return `${a.item_id} · ${typeLabel}${refineryNote}${customName ? ` · ${customName}` : ""}`;
+                        return `${a.item_id} · ${typeLabel}${refineryNote}${customName ? ` · ${escapeMd(customName)}` : ""}`;
                     })
                     .join("\n") || "(location_type=solar_system 인 항목 없음)";
 
@@ -862,8 +880,9 @@ export default {
                     .map(([sysId, items]) => {
                         const byTypeCount = {};
                         for (const a of items) {
-                            const label =
-                                allSystemTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`;
+                            const label = escapeMd(
+                                allSystemTypeInfo[a.type_id]?.name ?? `type_id=${a.type_id}`
+                            );
                             byTypeCount[label] = (byTypeCount[label] ?? 0) + 1;
                         }
                         const typeSummary = Object.entries(byTypeCount)

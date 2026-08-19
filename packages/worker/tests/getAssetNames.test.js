@@ -78,7 +78,7 @@ describe("worker/esi/getAssetNames", () => {
     test("한 청크가 재시도까지 다 실패해도 나머지 청크 결과는 유지한다", async () => {
         globalThis.fetch = jest.fn().mockImplementation((url, opts) => {
             const batch = JSON.parse(opts.body);
-            // id=1이 섞인 청크(1~200)는 원 요청·재시도 둘 다 실패, 나머지 청크는 항상 성공.
+            // id=1이 섞인 청크(1~200)는 모든 시도가 실패, 나머지 청크는 항상 성공.
             if (batch.includes(1)) {
                 return Promise.resolve({ ok: false, status: 420 });
             }
@@ -95,8 +95,8 @@ describe("worker/esi/getAssetNames", () => {
         expect(result.has(1)).toBe(false);
         expect(result.get(250)).toBe("name-250");
         expect(result.size).toBe(50);
-        // 실패 청크: 원 요청 + 재시도 = 2번, 성공 청크: 1번 → 총 3번.
-        expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+        // 실패 청크: 최대 시도 횟수(3)만큼, 성공 청크: 1번 → 총 4번.
+        expect(globalThis.fetch).toHaveBeenCalledTimes(4);
     });
 
     test("첫 시도가 실패해도 재시도가 성공하면 결과에 포함된다 — 실제로 겪은 버그의 핵심", async () => {
@@ -116,10 +116,30 @@ describe("worker/esi/getAssetNames", () => {
         expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     });
 
+    // 회귀 테스트: 재시도 1번(총 2번 시도)이던 시절엔 이 케이스에서 이름이
+    // 누락됐다 — 관리자가 /자산진단을 무겁게 돌리는 동안 ESI 요청 제한에 두 번
+    // 연속 걸릴 수 있다는 걸 실측으로 확인하고 최대 시도 횟수를 3으로 늘렸다.
+    test("두 번 연속 실패해도 세 번째 시도에서 성공하면 결과에 포함된다", async () => {
+        let attempts = 0;
+        globalThis.fetch = jest.fn().mockImplementation(() => {
+            attempts += 1;
+            if (attempts <= 2) return Promise.resolve({ ok: false, status: 420 });
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve([{ item_id: 1, name: "세 번째 시도로 성공" }]),
+            });
+        });
+
+        const result = await getAssetNames("token", 12345, [1]);
+
+        expect(result.get(1)).toBe("세 번째 시도로 성공");
+        expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    });
+
     test("fetch가 재시도까지 계속 throw해도 예외를 던지지 않고 빈 결과로 처리한다", async () => {
         globalThis.fetch = jest.fn().mockRejectedValue(new Error("network error"));
         const result = await getAssetNames("token", 12345, [1]);
         expect(result.size).toBe(0);
-        expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+        expect(globalThis.fetch).toHaveBeenCalledTimes(3);
     });
 });
