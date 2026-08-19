@@ -203,16 +203,32 @@ export function aggregateHangarStock(structureId, assets) {
 
             for (const child of childrenByParent.get(String(item.item_id)) ?? []) {
                 const isChildDivisionRoot = CORPSAG_FLAG_RE.test(child.location_flag);
-                // 컨테이너 내용물(Unlocked)이나 division 루트가 아니면 함선/구조물에
-                // "장착"된 것이다(HiSlot·MedSlot·LoSlot·RigSlot·Cargo·DroneBay 등 피팅·화물
-                // 슬롯) — 실측 확인됨: 이런 아이템은 is_singleton:true라도 ESI가 "이름
-                // 지정 가능한 아이템"으로 안 쳐서, item_id 하나가 getAssetNames 배치에
-                // 섞이면 그 청크(최대 200개) 전체가 404로 통째로 거부된다. 그 청크에
-                // 우연히 같이 묶인 진짜 이름 붙은 함선들까지 전부 이름을 잃어버렸었다
-                // (재시도해도 똑같은 요청을 그대로 다시 보내는 거라 안 고쳐짐). 어차피
-                // containerName 추적 규칙이 있을 수 없어 isTracked에서 항상 걸러지던
-                // 대상이라, 아예 여기서 더 내려가지 않아도 최종 재고 결과는 그대로다.
-                if (!isChildDivisionRoot && child.location_flag !== "Unlocked") continue;
+                // division이 이미 확정된(= 어느 행어 소속인지 아는) 상태에서만 flag를
+                // 따진다 — division을 아직 못 찾은 채로 내려가는 중간 경유 구간(예:
+                // 구조물 → 오피스 → 그 안의 또 다른 중간 아이템 → CorpSAG)에는 이 가드를
+                // 걸면 안 된다. 그 구간은 아직 division=null이라 밑에서 `if (division)`가
+                // 막아줘서 어차피 집계에 안 섞이니, 여기서 미리 막을 필요가 없다(오히려
+                // 막으면 중간 경유가 2단 이상일 때 진짜 행어까지 도달을 못 함).
+                //
+                // division 안에 들어온 뒤엔, 컨테이너 내용물(Unlocked/Locked — 잠긴 보안
+                // 컨테이너도 내용물은 Locked로 나온다)이나 division 루트가 아니면 함선/
+                // 구조물에 "장착"된 것이다(HiSlot·MedSlot·LoSlot·RigSlot·Cargo·DroneBay 등
+                // 피팅·화물 슬롯) — 실측 확인됨: 이런 아이템은 is_singleton:true라도 ESI가
+                // "이름 지정 가능한 아이템"으로 안 쳐서, item_id 하나가 getAssetNames
+                // 배치에 섞이면 그 청크(최대 200개) 전체가 404로 통째로 거부된다. 그
+                // 청크에 우연히 같이 묶인 진짜 이름 붙은 함선들까지 전부 이름을
+                // 잃어버렸었다(재시도해도 똑같은 요청을 그대로 다시 보내는 거라 안
+                // 고쳐짐). 어차피 containerName 추적 규칙이 있을 수 없어 isTracked에서
+                // 항상 걸러지던 대상이라, 아예 여기서 더 내려가지 않아도 최종 재고
+                // 결과는 그대로다.
+                if (
+                    division != null &&
+                    !isChildDivisionRoot &&
+                    child.location_flag !== "Unlocked" &&
+                    child.location_flag !== "Locked"
+                ) {
+                    continue;
+                }
 
                 const inheritedDivision = isChildDivisionRoot ? child.location_flag : division;
                 next.push({

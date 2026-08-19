@@ -328,6 +328,81 @@ describe("stockSyncScheduler/aggregateHangarStock", () => {
         expect(result.some((r) => r.itemId === FITTED_GUN_ID)).toBe(false);
     });
 
+    // 회귀 테스트: 잠긴 보안 컨테이너(Audit Log Secure Container 등) 안 내용물은
+    // Unlocked가 아니라 Locked로 나온다 — 이것도 "장착 슬롯"이 아니라 정당한
+    // 컨테이너 내용물이라 집계에 그대로 잡혀야 한다(Unlocked만 허용하던 첫 버전은
+    // 이걸 놓쳐서 실제 재고를 조용히 빠뜨릴 뻔했다).
+    test("잠긴 컨테이너(Locked) 내용물도 Unlocked와 동일하게 집계된다", () => {
+        const CONTAINER_ID = 999;
+        const assets = [
+            {
+                item_id: CONTAINER_ID,
+                type_id: 17364, // Audit Log Secure Container
+                location_id: STRUCTURE_ID,
+                location_flag: "CorpSAG4",
+                quantity: 1,
+            },
+            {
+                item_id: 5001,
+                type_id: 21896,
+                location_id: CONTAINER_ID,
+                location_flag: "Locked",
+                quantity: 300,
+            },
+        ];
+        const result = aggregateHangarStock(STRUCTURE_ID, assets);
+        expect(find(result, 21896)).toEqual({
+            typeId: 21896,
+            division: 4,
+            containerItemId: CONTAINER_ID,
+            quantity: 300,
+            itemId: null,
+        });
+    });
+
+    // 회귀 테스트: division을 아직 못 찾은 채로 중간 경유 아이템이 2단 이상 이어지는
+    // 경우 — division=null인 동안은 flag 가드를 걸면 안 된다(걸면 진짜 행어까지
+    // 못 내려감). 이 파일 위쪽의 "행어 안 컨테이너 내용물은..." 테스트는 중간 경유가
+    // 1단(오피스)뿐이라 이 문제를 못 잡는다 — 여기서는 오피스 안에 또 다른 이름 없는
+    // 중간 아이템(예: 서브 폴더)이 한 번 더 끼는 2단 경유를 재현한다.
+    test("division 확정 전 중간 경유가 2단 이상이어도 끝까지 내려가 행어에 도달한다", () => {
+        const OFFICE_ID = 500;
+        const SUB_FOLDER_ID = 501; // 오피스 안의, division도 CorpSAG도 아닌 또 다른 중간 아이템
+        const assets = [
+            {
+                item_id: OFFICE_ID,
+                type_id: 27,
+                location_id: STRUCTURE_ID,
+                location_flag: "OfficeFolder",
+                quantity: 1,
+            },
+            {
+                // "장착 슬롯도, Unlocked/Locked도 아닌" 임의의 중간 flag — division이
+                // 아직 null이라 걸러지면 안 되는 경우를 흉내낸다.
+                item_id: SUB_FOLDER_ID,
+                type_id: 27,
+                location_id: OFFICE_ID,
+                location_flag: "SomeIntermediateFlag",
+                quantity: 1,
+            },
+            {
+                item_id: 5002,
+                type_id: 100,
+                location_id: SUB_FOLDER_ID,
+                location_flag: "CorpSAG5",
+                quantity: 7,
+            },
+        ];
+        const result = aggregateHangarStock(STRUCTURE_ID, assets);
+        expect(find(result, 100)).toEqual({
+            typeId: 100,
+            division: 5,
+            containerItemId: null,
+            quantity: 7,
+            itemId: null,
+        });
+    });
+
     test("구조물 자체 피팅(HiSlot 등)은 division 상속 없이 전부 무시한다", () => {
         const FITTED_MODULE_ID = 777;
         const assets = [
