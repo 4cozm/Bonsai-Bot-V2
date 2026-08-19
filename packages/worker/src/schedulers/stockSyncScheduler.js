@@ -279,11 +279,31 @@ export async function syncStructure({ prisma, structure, anchorCharacterId, log 
     // 아이템이라 같은 배치에 섞어도 안전하다(자산진단 명령에서 이미 검증된 패턴).
     const containerItemIds = aggregated.map((r) => r.containerItemId).filter((id) => id != null);
     const singletonItemIds = aggregated.map((r) => r.itemId).filter((id) => id != null);
-    const { names, hadFailures: namesHadFailures } = await getAssetNames(
-        accessToken,
-        structure.corporationId,
-        [...new Set([...containerItemIds, ...singletonItemIds])]
-    );
+    const {
+        names,
+        hadFailures: namesHadFailures,
+        unnameableIds,
+    } = await getAssetNames(accessToken, structure.corporationId, [
+        ...new Set([...containerItemIds, ...singletonItemIds]),
+    ]);
+
+    // 진단용: 이분 탐색으로 확정된 "이름 지정 불가" id가 실제로 어떤 아이템인지
+    // 원본 asset 목록과 대조해 남긴다 — 청사진 사본이라는 가설을 실측으로 확인/
+    // 반증하기 위함. 데이터 흐름에는 영향 없음(로그만).
+    if (unnameableIds.length > 0) {
+        const assetById = new Map(assets.map((a) => [a.item_id, a]));
+        for (const id of unnameableIds) {
+            const asset = assetById.get(id);
+            log.warn("[stock-sync] 이름 지정 불가 id 확인됨(진단용)", {
+                structureId: String(structure.structureId),
+                itemId: id,
+                typeId: asset?.type_id ?? null,
+                locationFlag: asset?.location_flag ?? null,
+                locationId: asset?.location_id ?? null,
+                isSingleton: asset?.is_singleton ?? null,
+            });
+        }
+    }
 
     const rules = await prisma.stockDivisionRule.findMany({
         where: { structureId: structure.structureId },
